@@ -1,0 +1,7 @@
+# Pasta de vídeos baixados e seus frames
+videos_baixados/
+videos/
+
+# Arquivos de ambiente virtual (comum em projetos Python)
+venv/
+__pycache__/
