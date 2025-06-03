@@ -5,3 +5,5 @@ songs/
 # Arquivos de ambiente virtual (comum em projetos Python)
 venv/
 __pycache__/
+# Arquivo de variáveis de ambiente
+.env
