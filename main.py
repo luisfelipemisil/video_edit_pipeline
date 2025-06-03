@@ -13,7 +13,7 @@ def extrair_frames(video_path, pasta_frames_saida, intervalo_segundos=1, qualida
         intervalo_segundos (float): Intervalo em segundos para extrair frames.
                                      Ex: 1 para um frame por segundo.
         qualidade_jpeg (int): Qualidade para salvar frames JPEG (0-100).
-                              Padrão é 75.
+                              Padrão é 55 (conforme assinatura da função).
     
     Returns:
         list: Uma lista de tuplas (caminho_do_frame, timestamp_em_segundos).
@@ -179,17 +179,83 @@ def baixar_video(url, path_destino_param="."):
         print(f"⚠️ Erro inesperado ao tentar baixar {url}: {e}")
         return None
 
-def baixar_videos_da_lista(arquivo_lista, path_destino=".", intervalo_extracao_frames_seg=1, qualidade_jpeg_frames=75):
+def baixar_audio_youtube(url, path_destino_param="."):
+    """
+    Baixa o áudio de um vídeo do YouTube como MP3 usando yt-dlp.
+
+    Args:
+        url (str): A URL do vídeo do YouTube.
+        path_destino_param (str): O diretório onde o áudio MP3 será salvo.
+
+    Returns:
+        str or None: O caminho completo para o arquivo MP3 baixado ou None em caso de erro.
+    """
+    try:
+        print(f"Baixando áudio de: {url}")
+
+        # Etapa 1: Obter o nome do arquivo que yt-dlp usaria para o áudio MP3
+        get_filename_process = subprocess.run([
+            "yt-dlp",
+            "--get-filename",
+            "-x", # Extrair áudio
+            "--audio-format", "mp3",
+            "-o", "%(title)s.%(ext)s", # Template para obter o nome do arquivo com título e extensão mp3
+            "--no-warnings",
+            url
+        ], capture_output=True, text=True, check=True, encoding='utf-8')
+
+        resolved_filename_lines = get_filename_process.stdout.strip().split('\n')
+        resolved_filename = resolved_filename_lines[-1] if resolved_filename_lines else None
+
+        if not resolved_filename:
+            print(f"⚠️ Não foi possível obter o nome do arquivo de áudio resolvido para {url} via --get-filename.")
+            return None
+        
+        path_destino_abs = os.path.abspath(path_destino_param)
+        if not os.path.exists(path_destino_abs):
+            os.makedirs(path_destino_abs, exist_ok=True)
+        
+        final_intended_audio_path = os.path.join(path_destino_abs, resolved_filename)
+        print(f"   Tentando salvar áudio em: {final_intended_audio_path}")
+
+        if os.path.exists(final_intended_audio_path):
+            print(f"✅ Áudio já baixado: {os.path.basename(final_intended_audio_path)}")
+            print(f"   Localizado em: {final_intended_audio_path}")
+            return final_intended_audio_path
+
+        download_process = subprocess.run([
+            "yt-dlp",
+            "-x", # Extrair áudio
+            "--audio-format", "mp3",
+            "-o", final_intended_audio_path, # Caminho de saída absoluto e completo
+            "--no-warnings",
+            url
+        ], capture_output=True, text=True, check=False, encoding='utf-8')
+
+        if download_process.returncode == 0 and os.path.exists(final_intended_audio_path):
+            print(f"✅ Download do áudio concluído: {os.path.basename(final_intended_audio_path)}")
+            return final_intended_audio_path
+        else:
+            print(f"⚠️ Erro ao baixar áudio de {url} com yt-dlp.")
+            print(f"   Código de retorno: {download_process.returncode}")
+            print(f"   Saída (stdout):\n{download_process.stdout}")
+            print(f"   Saída (stderr):\n{download_process.stderr}")
+            return None
+    except Exception as e:
+        print(f"⚠️ Erro inesperado ao tentar baixar áudio de {url}: {e}")
+        return None
+
+def baixar_videos_da_lista(arquivo_lista, path_destino_videos_param=".", intervalo_extracao_frames_seg=1, qualidade_jpeg_frames=75, caminho_musica=None):
     if not os.path.exists(arquivo_lista):
         print(f"Arquivo de lista não encontrado: {arquivo_lista}")
         return
     
-    if not os.path.exists(path_destino):
+    if not os.path.exists(path_destino_videos_param):
         try:
-            os.makedirs(path_destino)
-            print(f"Pasta de destino principal criada: {path_destino}")
+            os.makedirs(path_destino_videos_param)
+            print(f"Pasta de destino principal para vídeos criada: {path_destino_videos_param}")
         except OSError as e:
-            print(f"⚠️ Erro ao criar pasta de destino principal {path_destino}: {e}")
+            print(f"⚠️ Erro ao criar pasta de destino principal para vídeos {path_destino_videos_param}: {e}")
             return
             
     with open(arquivo_lista, "r", encoding='utf-8') as f: # Adicionado encoding
@@ -201,24 +267,25 @@ def baixar_videos_da_lista(arquivo_lista, path_destino=".", intervalo_extracao_f
 
     print(f"\nIniciando download de {len(links)} vídeo(s) da lista '{arquivo_lista}'...")
     for link in links:
-        caminho_video_baixado = baixar_video(link, path_destino)
+        caminho_video_baixado = baixar_video(link, path_destino_videos_param)
         
         if caminho_video_baixado:
             # Criar uma pasta específica para os frames deste vídeo
             nome_base_video = os.path.splitext(os.path.basename(caminho_video_baixado))[0]
-            pasta_frames_video = os.path.join(path_destino, f"{nome_base_video}_frames")
+            pasta_frames_video = os.path.join(path_destino_videos_param, f"{nome_base_video}_frames")
             
             frames_info = extrair_frames(caminho_video_baixado, pasta_frames_video, intervalo_extracao_frames_seg, qualidade_jpeg_frames)
             
             if frames_info:
-                # Aqui você tem a lista de frames e seus timestamps
-                # Exemplo: imprimir os primeiros 5 para verificação
-                # print(f"   Primeiros frames extraídos para '{nome_base_video}':")
-                # for i, (frame_path, timestamp) in enumerate(frames_info[:5]):
-                #    print(f"     - Frame: {os.path.basename(frame_path)}, Timestamp: {timestamp:.2f}s")
-                # print("   ...")
-                # Você pode usar 'frames_info' para enviar ao Gemini.
-                pass # A função extrair_frames já imprime o status
+                print(f"🎞️ Frames de '{nome_base_video}' extraídos.")
+                if caminho_musica and os.path.exists(caminho_musica):
+                    print(f"🎶 Música para análise: {caminho_musica}")
+                    print(f"🤖 Agora você pode enviar os {len(frames_info)} frames e a música para o Gemini.")
+                    # Aqui seria o local para chamar a API do Gemini, passando:
+                    # - frames_info (lista de tuplas com caminho do frame e timestamp)
+                    # - caminho_musica
+                elif caminho_musica:
+                    print(f"⚠️ Música especificada ({caminho_musica}) não encontrada. Análise com música não será possível para este vídeo.")
             # else: (extrair_frames já imprime erros ou status de nenhum frame)
         else:
             print(f"Download de {link} falhou ou foi pulado. Não será possível extrair frames.")
@@ -230,6 +297,9 @@ if __name__ == "__main__":
     pasta_destino_videos = "videos_baixados" # Pasta para salvar os vídeos e as pastas de frames
     intervalo_para_frames_seg = 1 # Extrair um frame a cada X segundos
     qualidade_dos_frames_jpeg = 75 # Qualidade JPEG (0-100), menor valor = menor tamanho/qualidade
+    
+    songs_directory = "songs" # Pasta onde as músicas estão localizadas
+    musica_config_file = "musica.txt" # Arquivo que contém o nome do arquivo de música
 
     # Cria a pasta de destino principal para vídeos se não existir
     if not os.path.exists(pasta_destino_videos):
@@ -252,5 +322,43 @@ if __name__ == "__main__":
         # print(f"Um arquivo de exemplo '{arquivo_links}' foi criado. Adicione suas URLs.")
         exit()
 
-    baixar_videos_da_lista(arquivo_links, pasta_destino_videos, intervalo_para_frames_seg, qualidade_dos_frames_jpeg)
+    # Determina o caminho do arquivo de música
+    caminho_do_arquivo_de_musica = None
+    # Garante que a pasta 'songs' exista
+    if not os.path.exists(songs_directory):
+        try:
+            os.makedirs(songs_directory)
+            print(f"Pasta '{songs_directory}/' criada.")
+        except OSError as e:
+            print(f"⚠️ Erro ao criar pasta '{songs_directory}/': {e}. Não será possível baixar a música.")
+            # Prossegue sem música se a pasta não puder ser criada
+
+    if not os.path.exists(musica_config_file):
+        print(f"⚠️ Arquivo de configuração da música '{musica_config_file}' não encontrado.")
+        print("   Não será possível carregar uma música para análise.")
+    else:
+        try:
+            with open(musica_config_file, "r", encoding='utf-8') as f_music_config:
+                youtube_url_musica = f_music_config.readline().strip()
+            
+            if not youtube_url_musica:
+                print(f"⚠️ O arquivo '{musica_config_file}' está vazio ou não contém uma URL do YouTube válida.")
+                print("   Não será possível carregar uma música para análise.")
+            elif not (youtube_url_musica.startswith("http://") or youtube_url_musica.startswith("https://")):
+                print(f"⚠️ Conteúdo de '{musica_config_file}' ('{youtube_url_musica}') não parece ser uma URL válida.")
+                print("   Não será possível carregar uma música para análise.")
+            else:
+                print(f"Tentando baixar áudio da URL em '{musica_config_file}': {youtube_url_musica}")
+                # Baixa o áudio da URL para a pasta 'songs'
+                caminho_do_arquivo_de_musica = baixar_audio_youtube(youtube_url_musica, songs_directory)
+                if caminho_do_arquivo_de_musica:
+                    print(f"🎶 Áudio para análise: {caminho_do_arquivo_de_musica}")
+                else:
+                    print(f"⚠️ Falha ao baixar o áudio de '{youtube_url_musica}'.")
+                    print("   A análise de combinação com música não será possível.")
+
+        except Exception as e:
+            print(f"⚠️ Erro ao ler o arquivo de configuração da música '{musica_config_file}': {e}")
+
+    baixar_videos_da_lista(arquivo_links, pasta_destino_videos, intervalo_para_frames_seg, qualidade_dos_frames_jpeg, caminho_do_arquivo_de_musica)
     print("\nProcesso concluído.")
