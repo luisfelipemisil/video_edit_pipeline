@@ -1,0 +1,16 @@
+{
+    "source_video":"Metropolis Trailer HD (Anime 2001).webm",
+    "source_audio":"Basement Jaxx - Where's Your Head At (Official Video).mp3",
+    "scenes": [
+        {
+            "audio_start":"00:00:14",
+            "audio_end":"00:00:29",
+            "frame": "23"
+        },
+        {
+            "audio_start":"00:00:29",
+            "audio_end":"00:00:35",
+            "frame": "43"
+        }
+    ]
+}

@@ -2,25 +2,22 @@ import os
 import subprocess
 import time # Adicionado para a pausa entre tentativas
 import cv2 # Adicionado para manipulação de vídeo
-import google.generativeai as genai
-import json # Para processar respostas JSON do Gemini, se aplicável
 from dotenv import load_dotenv # Adicionado para carregar o .env
-import google.api_core.exceptions # For catching specific API errors
+import json # Adicionado para ler o arquivo edit.json
+import shutil # Adicionado para remover diretório temporário
 
 # Carrega as variáveis de ambiente do arquivo .env
 load_dotenv()
 
-# Configuração da API Key do Gemini (idealmente via variável de ambiente)
+# Configuração da API Key da OpenAI (mantida caso você precise dela para outras coisas, mas não usada para análise)
 try:
-    GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
-    if GOOGLE_API_KEY:
-        genai.configure(api_key=GOOGLE_API_KEY)
-    else:
-        print("⚠️ GOOGLE_API_KEY não encontrada no ambiente. Verifique seu arquivo .env ou variáveis de ambiente.")
+    OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+    if not OPENAI_API_KEY:
+        # print("⚠️ OPENAI_API_KEY não encontrada no ambiente.") # Comentado para reduzir logs se não for usada
+        pass
 except Exception as e:
-    print(f"⚠️ Erro ao configurar a API Gemini: {e}. Verifique se GOOGLE_API_KEY está definida.")
-    # Decide se quer sair ou continuar sem a funcionalidade do Gemini
-    # exit() 
+    # print(f"⚠️ Erro ao carregar OPENAI_API_KEY: {e}") # Comentado para reduzir logs se não for usada
+    pass
 
 def comment_line_in_file(file_path, line_content_to_comment):
     """
@@ -334,133 +331,171 @@ def baixar_audio_youtube(url, path_destino_param="."):
         print(f"⚠️ Erro inesperado ao tentar baixar áudio de {url}: {e}")
         return None, False
 
-def analisar_com_gemini(caminho_musica, frames_info):
-    """
-    Envia o áudio e os frames para o Gemini analisar e sugerir trechos para um edit.
+def parse_hhmmss_to_seconds(time_str):
+    """Converte uma string de tempo HH:MM:SS para segundos."""
+    h, m, s = map(int, time_str.split(':'))
+    return h * 3600 + m * 60 + s
 
-    Args:
-        caminho_musica (str): Caminho para o arquivo de áudio.
-        frames_info (list): Lista de tuplas (caminho_do_frame, timestamp_em_segundos).
-
-    Returns:
-        dict or None: Um dicionário com as sugestões do Gemini ou None em caso de erro.
-                      Exemplo de retorno esperado:
-                      {
-                          "audio_snippet": {"start_sec": S, "end_sec": E},
-                          "video_scenes": [
-                              {"start_sec": V1_S, "end_sec": V1_E, "frame_path": FP1},
-                              {"start_sec": V2_S, "end_sec": V2_E, "frame_path": FP2}
-                          ]
-                      }
+def find_frame_by_number(frames_dir, target_frame_number_str):
     """
-    if not GOOGLE_API_KEY:
-        print("⚠️ API Key do Gemini não configurada. Análise com Gemini não será realizada.")
+    Encontra o arquivo de frame em frames_dir cujo número sequencial no nome
+    corresponde a target_frame_number_str.
+    Os nomes dos frames devem ser como 'frame_XXXXXX_...'.
+    """
+    if not os.path.exists(frames_dir):
+        print(f"⚠️ Diretório de frames não encontrado: {frames_dir}")
         return None
 
-    print("\n🤖 Analisando com Gemini...")
-    try:
-        # Escolha um modelo Gemini que suporte multimodalidade (ex: gemini-1.5-pro)
-        # Verifique a documentação para o modelo mais recente e adequado.
-        model = genai.GenerativeModel('gemini-1.5-pro-latest') 
+    target_frame_number = int(target_frame_number_str) # Converte para inteiro para formatação
+    # Formata o número do frame para ter 6 dígitos com zeros à esquerda, como no nome do arquivo
+    search_prefix = f"frame_{target_frame_number:06d}_"
 
-        # 1. Fazer upload dos arquivos para a API Gemini
-        print(f"   Fazendo upload do arquivo de áudio: {caminho_musica}...")
-        audio_file_uploaded = genai.upload_file(path=caminho_musica)
-        print(f"   Upload do áudio concluído: {audio_file_uploaded.name}")
+    for filename in os.listdir(frames_dir):
+        if filename.startswith(search_prefix) and filename.endswith(".jpg"): # Assumindo extensão .jpg
+            frame_path = os.path.join(frames_dir, filename)
+            print(f"   Frame encontrado para o número '{target_frame_number_str}': {filename}")
+            return frame_path
+    else:
+        print(f"⚠️ Nenhum frame correspondente encontrado para o número '{target_frame_number_str}' (prefixo buscado: '{search_prefix}') em {frames_dir}")
 
-        # Para os frames, podemos enviar alguns representativos ou todos, dependendo dos limites da API
-        # e da estratégia. Para este exemplo, vamos assumir que podemos referenciá-los.
-        # A API Gemini pode lidar com uma lista de partes, incluindo texto e arquivos.
-        
-        # Construir o prompt
-        # Este prompt é um exemplo e pode precisar de muitos refinamentos.
-        prompt_parts = [
-            "Você é um editor de vídeo especialista em criar conteúdo viral para o TikTok com estética cyberpunk.",
-            "Analise o seguinte arquivo de áudio:",
-            audio_file_uploaded, # Referência ao arquivo de áudio carregado
-            f"O áudio tem duração X segundos. (Você precisaria obter a duração do áudio aqui se o Gemini não fizer isso automaticamente)",
-            "Agora, considere a seguinte sequência de frames de um vídeo. Cada frame tem um timestamp associado:",
+    return None
+
+def criar_edite_do_json(edit_data):
+    """
+    Cria um vídeo editado com base nas especificações do arquivo JSON.
+    """
+    print("\n🎬 Iniciando criação do edit a partir de 'edit.json'...")
+
+    videos_baixados_dir = "videos_baixados"
+    songs_dir = "songs"
+    temp_dir = "temp_edit_files"
+    output_edit_filename = "edit_final.mp4"
+    video_fps_output = "25" # FPS para os clipes de cena gerados
+
+    source_video_name = edit_data.get("source_video")
+    source_audio_name = edit_data.get("source_audio")
+    scenes_data = edit_data.get("scenes", [])
+
+    if not source_video_name or not source_audio_name:
+        print("⚠️ 'source_video' ou 'source_audio' não encontrado no edit.json.")
+        return
+
+    full_audio_path = os.path.join(songs_dir, source_audio_name)
+    video_frames_dir_name = os.path.splitext(source_video_name)[0] + "_frames"
+    full_video_frames_dir = os.path.join(videos_baixados_dir, video_frames_dir_name)
+
+    if not os.path.exists(full_audio_path):
+        print(f"⚠️ Arquivo de áudio fonte não encontrado: {full_audio_path}")
+        return
+    if not os.path.exists(full_video_frames_dir):
+        print(f"⚠️ Diretório de frames do vídeo fonte não encontrado: {full_video_frames_dir}")
+        return
+
+    if os.path.exists(temp_dir):
+        shutil.rmtree(temp_dir) # Remove diretório temporário antigo
+    os.makedirs(temp_dir, exist_ok=True)
+
+    scene_clip_paths = []
+
+    for i, scene in enumerate(scenes_data):
+        print(f"\n  Processando cena {i+1}...")
+        audio_start_str = scene.get("audio_start")
+        audio_end_str = scene.get("audio_end")
+        target_frame_number_str = scene.get("frame") # Agora é o número do frame
+
+        if not all([audio_start_str, audio_end_str, target_frame_number_str]):
+            print(f"⚠️ Dados incompletos para a cena {i+1}. Pulando.")
+            continue
+
+        try:
+            audio_start_sec = parse_hhmmss_to_seconds(audio_start_str)
+            audio_end_sec = parse_hhmmss_to_seconds(audio_end_str)
+            # target_frame_sec = float(target_frame_timestamp_str) # Não é mais necessário converter para float
+            # A validação do número do frame (se é um inteiro) pode ser adicionada se desejado
+        except ValueError as e:
+            print(f"⚠️ Erro ao converter timestamps para a cena {i+1}: {e}. Pulando.")
+            continue
+
+        audio_duration_sec = audio_end_sec - audio_start_sec
+        if audio_duration_sec <= 0:
+            print(f"⚠️ Duração do áudio inválida para a cena {i+1} ({audio_duration_sec}s). Pulando.")
+            continue
+
+        frame_image_path = find_frame_by_number(full_video_frames_dir, target_frame_number_str)
+        if not frame_image_path:
+            print(f"⚠️ Não foi possível encontrar o frame para a cena {i+1}. Pulando.")
+            continue
+
+        temp_audio_clip_path = os.path.join(temp_dir, f"scene_{i+1}_audio.aac") # Usar AAC para compatibilidade
+        temp_video_clip_path = os.path.join(temp_dir, f"scene_{i+1}_video.mp4")
+
+        # Cortar áudio
+        cmd_audio = [
+            "ffmpeg", "-y", 
+            "-i", full_audio_path,
+            "-ss", str(audio_start_sec), # Output seeking, placed after -i
+            "-t", str(audio_duration_sec), # Use duration instead of -to
+            "-c:a", "aac", "-b:a", "192k", # Re-encoda para AAC
+            temp_audio_clip_path 
         ]
+        print(f"    Cortando áudio: {' '.join(cmd_audio)}")
+        audio_process_result = subprocess.run(cmd_audio, capture_output=True, text=True)
+        if audio_process_result.returncode != 0:
+            print(f"⚠️ Erro ao cortar áudio para cena {i+1}:")
+            print(f"   Comando: {' '.join(cmd_audio)}")
+            print(f"   ffmpeg stdout: {audio_process_result.stdout}")
+            print(f"   ffmpeg stderr: {audio_process_result.stderr}")
+            continue # Pula para a próxima cena
 
-        # Adicionar informações dos frames ao prompt (pode ser uma lista de caminhos ou referências)
-        # Se for enviar os frames, eles também precisariam ser carregados com genai.upload_file
-        # Por simplicidade, vamos descrever os frames e seus timestamps.
-        # Em uma implementação real, você pode enviar os arquivos de imagem se a API permitir um grande número.
-        prompt_parts.append("Frames do vídeo (timestamp em segundos):")
-        for frame_path, timestamp in frames_info[:5]: # Exemplo: enviando info dos primeiros 20 frames
-            # Reduzido para 5 frames para teste de quota, ajuste conforme necessário
-        # for frame_path, timestamp in frames_info[:5]: 
-            prompt_parts.append(f"- Frame: {os.path.basename(frame_path)} at {timestamp:.2f}s") # Use o loop original
-            # Se fosse fazer upload:
-            # uploaded_frame = genai.upload_file(path=frame_path)
-            # prompt_parts.append(uploaded_frame)
-    
-        prompt_parts.extend([
-            "\nTarefa:",
-            "1. No áudio fornecido, identifique um trecho curto (5-15 segundos) que seja empolgante e adequado para um edit cyberpunk no TikTok.",
-            "2. Nos frames do vídeo fornecidos, selecione uma sequência de cenas que se encaixem visualmente e ritmicamente com o trecho de áudio escolhido. As cenas devem fluir bem em sequência.",
-            "3. Retorne sua sugestão no seguinte formato JSON:",
-            "   {\"audio_snippet\": {\"start_sec\": <início_audio_seg>, \"end_sec\": <fim_audio_seg>}, \"video_scenes\": [{\"start_sec\": <início_cena1_seg>, \"end_sec\": <fim_cena1_seg>}, {\"start_sec\": <início_cena2_seg>, \"end_sec\": <fim_cena2_seg>}]}",
-            "   Certifique-se de que os timestamps de vídeo correspondam aos timestamps dos frames fornecidos."
-        ])
 
-        max_gemini_retries = 3
-        # Initial delay based on a common suggestion, but will try to use API's suggestion
-        gemini_retry_delay_base_seconds = 30 
+        # Criar clipe de vídeo a partir do frame e do áudio cortado
+        cmd_video_scene = [
+            "ffmpeg", "-y", "-loop", "1", "-framerate", video_fps_output, "-i", frame_image_path,
+            "-i", temp_audio_clip_path,
+            "-c:v", "libx264", "-tune", "stillimage", "-c:a", "copy", # Copia o áudio já em AAC
+            "-pix_fmt", "yuv420p", "-t", str(audio_duration_sec), "-shortest",
+            temp_video_clip_path
+        ]
+        print(f"    Criando clipe da cena: {' '.join(cmd_video_scene)}")
+        video_scene_process_result = subprocess.run(cmd_video_scene, capture_output=True, text=True)
+        if video_scene_process_result.returncode != 0:
+            print(f"⚠️ Erro ao criar clipe da cena {i+1}:")
+            print(f"   Comando: {' '.join(cmd_video_scene)}")
+            print(f"   ffmpeg stdout: {video_scene_process_result.stdout}")
+            print(f"   ffmpeg stderr: {video_scene_process_result.stderr}")
+            continue # Pula para a próxima cena
+        scene_clip_paths.append(temp_video_clip_path)
 
-        for attempt in range(max_gemini_retries):
-            try:
-                print(f"   Enviando prompt para o Gemini (tentativa {attempt + 1}/{max_gemini_retries})...")
-                response = model.generate_content(prompt_parts)
-                
-                print("   Resposta recebida do Gemini.")
-                # Tentar processar a resposta como JSON
-                try:
-                    cleaned_response_text = response.text.strip()
-                    if cleaned_response_text.startswith("```json"):
-                        cleaned_response_text = cleaned_response_text[7:]
-                    if cleaned_response_text.endswith("```"):
-                        cleaned_response_text = cleaned_response_text[:-3]
-                    
-                    sugestoes = json.loads(cleaned_response_text)
-                    return sugestoes # Success
-                except (json.JSONDecodeError, AttributeError, TypeError) as e_json:
-                    print(f"⚠️ Não foi possível decodificar a resposta do Gemini como JSON: {e_json}")
-                    print(f"   Resposta bruta do Gemini:\n{response.text}")
-                    return None # JSON processing error, don't retry this specific error
+    if not scene_clip_paths:
+        print("⚠️ Nenhuma cena foi processada. Edição final não será criada.")
+        shutil.rmtree(temp_dir)
+        return
 
-            except google.api_core.exceptions.ResourceExhausted as e_quota: # Specific error for 429
-                print(f"⚠️ Erro de cota do Gemini (429): {e_quota}")
-                if attempt < max_gemini_retries - 1:
-                    delay_seconds = gemini_retry_delay_base_seconds
-                    # Try to parse suggested retry_delay from the error metadata
-                    if hasattr(e_quota, 'metadata') and e_quota.metadata:
-                        for item in e_quota.metadata:
-                            if item.key == 'retry_delay' and hasattr(item.value, 'seconds'):
-                                try:
-                                    delay_seconds = int(item.value.seconds) + 2 # Add a small buffer
-                                    print(f"   API sugeriu aguardar {item.value.seconds}s.")
-                                    break
-                                except (ValueError, AttributeError):
-                                    pass # Use default if parsing fails
-                    
-                    print(f"   Aguardando {delay_seconds} segundos antes de tentar novamente...")
-                    time.sleep(delay_seconds)
-                    gemini_retry_delay_base_seconds *= 2 # Exponential backoff for next default
-                else:
-                    print("   Máximo de tentativas com Gemini atingido devido a erro de cota.")
-                    return None # Failed after all retries
-            except Exception as e_general: # Catch other potential errors during API call
-                print(f"⚠️ Erro inesperado durante a chamada à API Gemini: {e_general}")
-                return None # Don't retry general errors
-        
-        return None # Should only be reached if all retries for quota error fail
-    except Exception as e:
-        print(f"⚠️ Erro durante a análise com Gemini: {e}")
-        # Em caso de erro com upload_file, pode ser útil limpar arquivos temporários se a API os criar.
-        # if 'audio_file_uploaded' in locals() and audio_file_uploaded:
-        # genai.delete_file(audio_file_uploaded.name) # Exemplo de limpeza
-        return None
+    # Concatenar clipes de cena
+    filelist_path = os.path.join(temp_dir, "filelist.txt")
+    with open(filelist_path, "w") as f:
+        for clip_path in scene_clip_paths:
+            # ffmpeg concat demuxer requer caminhos relativos (ao filelist.txt) ou absolutos.
+            # Para simplicidade, se os clipes estão no mesmo dir que filelist.txt, só o nome do arquivo.
+            f.write(f"file '{os.path.basename(clip_path)}'\n") 
+
+    cmd_concat = [
+        "ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", filelist_path,
+        "-c", "copy", output_edit_filename
+    ]
+    print(f"\n  Concatenando cenas para '{output_edit_filename}': {' '.join(cmd_concat)}")
+    concat_process_result = subprocess.run(cmd_concat, capture_output=True, text=True)
+    if concat_process_result.returncode == 0:
+        print(f"✅ Edição final '{output_edit_filename}' criada com sucesso!")
+    else:
+        print(f"⚠️ Erro ao concatenar vídeos:")
+        print(f"   Comando: {' '.join(cmd_concat)}")
+        print(f"   ffmpeg stdout: {concat_process_result.stdout}")
+        print(f"   ffmpeg stderr: {concat_process_result.stderr}")
+
+    # Limpar arquivos temporários
+    shutil.rmtree(temp_dir)
+    print(f"  Diretório temporário '{temp_dir}' removido.")
 
 def baixar_videos_da_lista(arquivo_lista, path_destino_videos_param=".", intervalo_extracao_frames_seg=1, qualidade_jpeg_frames=75, caminho_musica=None):
     if not os.path.exists(arquivo_lista):
@@ -500,18 +535,8 @@ def baixar_videos_da_lista(arquivo_lista, path_destino_videos_param=".", interva
             if frames_info:
                 print(f"🎞️ Frames de '{nome_base_video}' extraídos.")
                 if caminho_musica and os.path.exists(caminho_musica):
-                    print(f"🎶 Música para análise: {caminho_musica}")
-                    
-                    sugestoes_gemini = analisar_com_gemini(caminho_musica, frames_info)
-
-                    if sugestoes_gemini:
-                        print("\n✨ Sugestões do Gemini para o Edit:")
-                        if "audio_snippet" in sugestoes_gemini:
-                            print(f"   🎤 Trecho do Áudio: {sugestoes_gemini['audio_snippet']['start_sec']:.2f}s - {sugestoes_gemini['audio_snippet']['end_sec']:.2f}s")
-                        if "video_scenes" in sugestoes_gemini:
-                            print("   🎬 Cenas do Vídeo Sugeridas:")
-                            for i, cena in enumerate(sugestoes_gemini['video_scenes']):
-                                print(f"      - Cena {i+1}: {cena['start_sec']:.2f}s - {cena['end_sec']:.2f}s")
+                    print(f"🎶 Música para análise: {caminho_musica}") # Apenas informa que a música está disponível
+                    # A análise com LLM foi removida. Você pode adicionar sua própria lógica aqui.
                 elif caminho_musica:
                     print(f"⚠️ Música especificada ({caminho_musica}) não encontrada. Análise com música não será possível para este vídeo.")
             # else: (extrair_frames já imprime erros ou status de nenhum frame)
@@ -521,6 +546,25 @@ def baixar_videos_da_lista(arquivo_lista, path_destino_videos_param=".", interva
 
 # Exemplo de uso
 if __name__ == "__main__":
+    edit_json_file = "edit.json"
+
+    # Verifica se o arquivo edit.json existe
+    if os.path.exists(edit_json_file):
+        print(f"ℹ️ Arquivo '{edit_json_file}' encontrado.")
+        try:
+            with open(edit_json_file, "r", encoding='utf-8') as f:
+                conteudo_edit = json.load(f) # Carrega o conteúdo JSON
+            print("\nConteúdo de 'edit.json':")
+            print(json.dumps(conteudo_edit, indent=4, ensure_ascii=False)) # Imprime de forma formatada
+            criar_edite_do_json(conteudo_edit) # Chama a nova função para criar o edit
+        except json.JSONDecodeError as e:
+            print(f"⚠️ Erro ao decodificar '{edit_json_file}': {e}. O arquivo pode não ser um JSON válido.")
+            exit("Programa finalizado devido a erro no 'edit.json'.")
+        except Exception as e:
+            print(f"⚠️ Erro ao ler '{edit_json_file}': {e}")
+            exit("Programa finalizado devido a erro ao processar 'edit.json'.")
+        exit("Programa finalizado após ler 'edit.json'.") # Encerra o programa
+
     arquivo_links = "links.txt"  # Coloque as URLs dos vídeos aqui, uma por linha
     pasta_destino_videos = "videos_baixados" # Pasta para salvar os vídeos e as pastas de frames
     intervalo_para_frames_seg = 1 # Extrair um frame a cada X segundos
