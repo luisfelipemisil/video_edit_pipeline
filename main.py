@@ -9,90 +9,17 @@ import random
 import platform
 import sys # Importar sys para verificar se librosa está disponível
 
-# --- Funções de Suporte para Análise de Batidas e Filtragem ---
-
-def load_amplitude_data(amplitude_file_path):
-    """
-    Carrega todos os pares timestamp-amplitude de um arquivo de referência
-    e determina a maior amplitude.
-    Formato esperado por linha: HH:MM:SS:FF,amplitude
-    Retorna um dicionário mapeando timestamps para amplitudes e a max_amplitude.
-    """
-    amplitude_map = {}
-    all_amplitudes = []
-
-    if not os.path.exists(amplitude_file_path):
-        # print(f"Erro: Arquivo de referência de amplitudes '{amplitude_file_path}' não encontrado.") # Suppress error here, handled by caller
-        return amplitude_map, 0.0
-
-    with open(amplitude_file_path, 'r', encoding='utf-8') as f:
-        for linha in f:
-            linha = linha.strip()
-            if not linha:
-                continue
-            try:
-                timestamp, amp_str = linha.split(',')
-                amplitude = float(amp_str)
-                amplitude_map[timestamp] = amplitude
-                all_amplitudes.append(amplitude)
-            except ValueError:
-                # print(f"Aviso: Linha ignorada (formato inválido no arquivo de amplitudes): '{linha}'") # Suppress warning here
-                continue
-
-    max_amplitude = max(all_amplitudes) if all_amplitudes else 0.0
-    return amplitude_map, max_amplitude
-
-def filter_timestamps_by_amplitude(
-    timestamps_file_path,
-    amplitude_map,
-    overall_max_amplitude,
-    min_amplitude_percentage
-):
-    """
-    Filtra timestamps de um arquivo especificado (contendo apenas timestamps)
-    baseado em suas amplitudes (buscadas no amplitude_map) em relação à overall_max_amplitude.
-    Salva os timestamps filtrados de volta no arquivo original.
-    """
-    if not amplitude_map or overall_max_amplitude == 0:
-        print("Aviso: Mapa de amplitudes vazio ou amplitude máxima é zero. Nenhum timestamp será filtrado.")
-        return False # Indicate filtering was not applied
-
-    if not os.path.exists(timestamps_file_path):
-        print(f"Erro: Arquivo de timestamps para filtrar '{timestamps_file_path}' não encontrado.")
-        return False # Indicate filtering was not applied
-
-    limite_inferior_amplitude = (min_amplitude_percentage / 100.0) * overall_max_amplitude
-    filtered_timestamps = []
-    original_timestamps_count = 0
-
-    with open(timestamps_file_path, 'r', encoding='utf-8') as f:
-        for linha in f:
-            timestamp = linha.strip()
-            if not timestamp:
-                continue
-            original_timestamps_count += 1
-
-            beat_amplitude = amplitude_map.get(timestamp)
-
-            if beat_amplitude is None:
-                # print(f"Aviso: Amplitude não encontrada para o timestamp '{timestamp}'. Será ignorado.")
-                continue
-
-            if beat_amplitude >= limite_inferior_amplitude:
-                filtered_timestamps.append(timestamp)
-
-    # Overwrite the original beats file with filtered timestamps
-    try:
-        with open(timestamps_file_path, 'w', encoding='utf-8') as f:
-            for ts in filtered_timestamps:
-                f.write(f"{ts}\n")
-        print(f"✅ Filtragem por amplitude concluída para '{os.path.basename(timestamps_file_path)}'.")
-        print(f"   Original: {original_timestamps_count} batidas")
-        print(f"   Filtrado (>= {min_amplitude_percentage}% da maior amplitude): {len(filtered_timestamps)} batidas")
-        return True # Indicate filtering was applied
-    except Exception as e:
-        print(f"⚠️ Erro ao escrever timestamps filtrados de volta para '{timestamps_file_path}': {e}")
-        return False # Indicate filtering failed
+from audio_processing import ( # Importa funções de processamento de áudio
+    analisar_batidas_audio,
+    load_amplitude_data,
+    filter_timestamps_by_amplitude
+)
+from video_processing import ( # Importa funções de processamento de vídeo
+    baixar_video,
+    extrair_frames,
+    detectar_cortes_de_cena # Nova função importada
+)
+from utils import resolver_nome_arquivo_yt_dlp, format_seconds_to_hhmmssff # Importa utilitários
 
 
 # Carrega as variáveis de ambiente do arquivo .env
@@ -141,460 +68,6 @@ def comment_line_in_file(file_path, line_content_to_comment):
                 f.writelines(new_lines)
     except Exception as e:
         print(f"⚠️ Erro ao tentar comentar linha em '{file_path}': {e}")
-
-def extrair_frames(video_path, pasta_frames_saida, intervalo_segundos=1, qualidade_jpeg=55):
-    """
-    Extrai frames de um vídeo em intervalos regulares e retorna seus caminhos e timestamps.
-
-    Args:
-        video_path (str): Caminho para o arquivo de vídeo.
-        pasta_frames_saida (str): Pasta onde os frames extraídos serão salvos.
-        intervalo_segundos (float): Intervalo em segundos para extrair frames.
-                                     Ex: 1 para um frame por segundo.
-        qualidade_jpeg (int): Qualidade para salvar frames JPEG (0-100).
-                              Padrão é 55 (conforme assinatura da função).
-
-    Returns:
-        list: Uma lista de tuplas (caminho_do_frame, timestamp_em_segundos).
-              Retorna uma lista vazia se o vídeo não puder ser aberto ou ocorrer um erro.
-    """
-    if not os.path.exists(video_path):
-        print(f"⚠️ Erro: Vídeo não encontrado em {video_path}")
-        return []
-
-    if not os.path.exists(pasta_frames_saida):
-        try:
-            os.makedirs(pasta_frames_saida)
-            print(f"Pasta de frames criada: {pasta_frames_saida}")
-        except OSError as e:
-            print(f"⚠️ Erro ao criar pasta de frames {pasta_frames_saida}: {e}")
-            return []
-
-    cap = cv2.VideoCapture(video_path)
-    if not cap.isOpened():
-        print(f"⚠️ Erro ao abrir o vídeo: {video_path}")
-        return []
-
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    if fps == 0: # Evita divisão por zero se o FPS não puder ser lido
-        print(f"⚠️ Erro: FPS do vídeo é 0 ou inválido. Não é possível extrair frames de {video_path}")
-        cap.release()
-        return []
-
-    frames_extraidos_info = []
-    frame_count = 0
-    num_frames_salvos = 0
-    proximo_timestamp_para_salvar = 0.0
-
-    video_basename = os.path.basename(video_path)
-    print(f"\n🎞️  Extraindo frames de '{video_basename}' (FPS: {fps:.2f}) a cada {intervalo_segundos} segundo(s)...")
-
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            break # Fim do vídeo ou erro ao ler o frame
-
-        timestamp_atual_segundos = frame_count / fps
-
-        if timestamp_atual_segundos >= proximo_timestamp_para_salvar:
-            # Formata o timestamp para inclusão no nome do arquivo, substituindo '.' por '_'
-            timestamp_str_arquivo = f"{timestamp_atual_segundos:.2f}".replace('.', '_')
-            nome_frame = f"frame_{num_frames_salvos:06d}_time_{timestamp_str_arquivo}s.jpg"
-            caminho_frame = os.path.join(pasta_frames_saida, nome_frame)
-
-            try:
-                cv2.imwrite(caminho_frame, frame, [cv2.IMWRITE_JPEG_QUALITY, qualidade_jpeg])
-                frames_extraidos_info.append((caminho_frame, timestamp_atual_segundos))
-                num_frames_salvos += 1
-                # Define o próximo ponto de salvamento.
-                # Se intervalo_segundos for muito pequeno (ex: 0), isso pode levar a salvar muitos frames.
-                # Garanta que intervalo_segundos seja razoável.
-                proximo_timestamp_para_salvar = num_frames_salvos * intervalo_segundos
-            except Exception as e:
-                print(f"⚠️ Erro ao salvar o frame {nome_frame}: {e}")
-                # Decide se quer continuar ou parar em caso de erro de escrita de frame
-                # break # ou continue
-
-        frame_count += 1
-
-    cap.release()
-    if frames_extraidos_info:
-        print(f"✅ Extração de frames de '{video_basename}' concluída. {len(frames_extraidos_info)} frames salvos em '{pasta_frames_saida}'.")
-    elif not cap.isOpened() and fps > 0 : # Se o vídeo foi aberto mas nenhum frame foi salvo (ex: vídeo muito curto)
-        print(f"ℹ️ Nenhum frame extraído para '{video_basename}'. O vídeo pode ser mais curto que o intervalo de extração ou vazio.")
-    return frames_extraidos_info
-
-
-def baixar_video(url, path_destino_param="."):
-    """
-    Baixa um vídeo usando yt-dlp.
-
-    Args:
-        url (str): The YouTube URL.
-        path_destino_param (str): The directory where the video will be saved.
-    Returns:
-        tuple: (caminho_do_arquivo_baixado, ja_existia_antes_flag) ou (None, False) em caso de erro.
-    """
-    try:
-        print(f"Baixando: {url}")
-
-        # Etapa 1: Obter o nome do arquivo que yt-dlp usaria (sanitizado, com extensão correta)
-        # Usamos um template simples aqui, pois só queremos o nome base do arquivo.
-        get_filename_process = subprocess.run([
-            "yt-dlp",
-            "--get-filename",
-            "-o", "%(title)s.%(ext)s", # Template para obter apenas o nome do arquivo
-            "--no-warnings",
-            url
-        ], capture_output=True, text=True, check=True, encoding='utf-8') # check=True para capturar erros aqui
-
-        resolved_filename_lines = get_filename_process.stdout.strip().split('\n')
-        resolved_filename = resolved_filename_lines[-1] if resolved_filename_lines else None
-
-        if not resolved_filename:
-            print(f"⚠️ Não foi possível obter o nome do arquivo resolvido para {url} via --get-filename.")
-            print(f"   Saída yt-dlp (stdout):\n{get_filename_process.stdout}")
-            print(f"   Saída yt-dlp (stderr):\n{get_filename_process.stderr}")
-            return None, False
-
-        # Etapa 2: Construir o caminho de destino absoluto final e realizar o download
-        path_destino_abs = os.path.abspath(path_destino_param)
-        if not os.path.exists(path_destino_abs):
-            try:
-                os.makedirs(path_destino_abs, exist_ok=True)
-            except OSError as e:
-                print(f"⚠️ Erro ao criar pasta de destino {path_destino_abs}: {e}")
-                return None, False
-
-        final_intended_path = os.path.join(path_destino_abs, resolved_filename)
-        print(f"   Tentando salvar em: {final_intended_path}")
-
-        # Etapa 2.1: Verificar se o vídeo já existe no caminho final pretendido
-        if os.path.exists(final_intended_path):
-            print(f"✅ Vídeo já baixado: {os.path.basename(final_intended_path)}")
-            print(f"   Localizado em: {final_intended_path}")
-            return final_intended_path, True
-
-        download_process = subprocess.run([
-            "yt-dlp",
-            "-f", "bestvideo+bestaudio/best", # Formato de alta qualidade
-            "-o", final_intended_path,        # Caminho de saída absoluto e completo
-            "--no-warnings",                  # Suprime avisos (opcional)
-            url
-        ], capture_output=True, text=True, check=False, encoding='utf-8')
-
-        if download_process.returncode == 0:
-            # Verificar a existência do arquivo no caminho que NÓS especificamos
-            max_retries = 3
-            retry_delay_segundos = 0.5
-            arquivo_encontrado = False
-            for tentativa in range(max_retries):
-                if os.path.exists(final_intended_path):
-                    arquivo_encontrado = True
-                    break
-                print(f"   ...arquivo '{final_intended_path}' não encontrado na tentativa {tentativa + 1}/{max_retries}. Aguardando {retry_delay_segundos}s...")
-                time.sleep(retry_delay_segundos)
-
-            if arquivo_encontrado:
-                print(f"✅ Download/Verificação concluído: {os.path.basename(final_intended_path)}")
-                print(f"   Salvo em: {final_intended_path}")
-                return final_intended_path, False # False porque foi baixado agora
-            else:
-                print(f"⚠️ Download parece ter sido bem-sucedido (código 0), mas o arquivo '{final_intended_path}' não foi encontrado após {max_retries} tentativas.")
-                print(f"   Saída do download yt-dlp (stdout):\n{download_process.stdout}")
-                print(f"   Saída do download yt-dlp (stderr):\n{download_process.stderr}")
-                return None, False
-        else:
-            print(f"⚠️ Erro ao baixar/processar {url} com yt-dlp.")
-            print(f"   Código de retorno: {download_process.returncode}")
-            print(f"   Saída yt-dlp (stdout):\n{download_process.stdout}")
-            print(f"   Saída yt-dlp (stderr):\n{download_process.stderr}")
-            return None, False
-
-    except subprocess.CalledProcessError as e: # Erro ao obter o nome do arquivo
-        print(f"⚠️ Erro ao tentar obter o nome do arquivo com yt-dlp para {url}: {e}")
-        print(f"   Comando: {' '.join(e.cmd)}")
-        print(f"   Saída yt-dlp (stdout):\n{e.stdout}")
-        print(f"   Saída yt-dlp (stderr):\n{e.stderr}")
-        return None, False
-    except FileNotFoundError: # yt-dlp não encontrado
-        print("⚠️ Erro: yt-dlp não encontrado. Verifique se está instalado e no PATH do sistema.")
-        return None, False
-    except Exception as e:
-        print(f"⚠️ Erro inesperado ao tentar baixar {url}: {e}")
-        return None, False
-
-def baixar_audio_youtube(url, path_destino_param="."):
-    """
-    Baixa o áudio de um vídeo do YouTube como MP3 usando yt-dlp.
-
-    Args:
-        url (str): A URL do vídeo do YouTube.
-        path_destino_param (str): O diretório onde o áudio MP3 será salvo.
-
-    Returns:
-        tuple: (caminho_do_arquivo_mp3, ja_existia_antes_flag) ou (None, False) em caso de erro.
-    """
-    try:
-        print(f"Baixando áudio de: {url}")
-
-        # Etapa 1: Obter o nome do arquivo que yt-dlp usaria para o áudio MP3
-        get_filename_process = subprocess.run([
-            "yt-dlp",
-            "--get-filename",
-            "-x", # Extrair áudio
-            "--audio-format", "mp3",
-            "-o", "%(title)s.%(ext)s", # Template para obter o nome do arquivo com título e extensão mp3
-            "--no-warnings",
-            url
-        ], capture_output=True, text=True, check=True, encoding='utf-8')
-
-        resolved_filename_lines = get_filename_process.stdout.strip().split('\n')
-        resolved_filename = resolved_filename_lines[-1] if resolved_filename_lines else None
-
-        if not resolved_filename:
-            print(f"⚠️ Não foi possível obter o nome do arquivo de áudio resolvido para {url} via --get-filename.")
-            return None, False
-
-        # Garante que o nome do arquivo resolvido tenha a extensão .mp3
-        base, ext = os.path.splitext(resolved_filename)
-        resolved_filename = base + ".mp3"
-
-        path_destino_abs = os.path.abspath(path_destino_param)
-        if not os.path.exists(path_destino_abs):
-            os.makedirs(path_destino_abs, exist_ok=True)
-
-        final_intended_audio_path = os.path.join(path_destino_abs, resolved_filename)
-        print(f"   Tentando salvar áudio em: {final_intended_audio_path}")
-
-        if os.path.exists(final_intended_audio_path):
-            print(f"✅ Áudio já baixado: {os.path.basename(final_intended_audio_path)}")
-            print(f"   Localizado em: {final_intended_audio_path}")
-            return final_intended_audio_path, True
-
-        download_process = subprocess.run([
-            "yt-dlp",
-            "-x", # Extrair áudio
-            "--audio-format", "mp3",
-            "-o", final_intended_audio_path, # Caminho de saída absoluto e completo
-            "--no-warnings",
-            url
-        ], capture_output=True, text=True, check=False, encoding='utf-8')
-
-        if download_process.returncode == 0:
-            # yt-dlp succeeded. Now, let's ensure the file exists at the intended path.
-            # This handles cases where yt-dlp might have downloaded it or confirmed it already exists.
-            max_retries = 3
-            retry_delay_segundos = 0.2 # Shorter delay as yt-dlp has finished
-            arquivo_encontrado_ou_ja_existia = False
-            for _ in range(max_retries):
-                if os.path.exists(final_intended_audio_path):
-                    arquivo_encontrado_ou_ja_existia = True
-                    break
-                time.sleep(retry_delay_segundos)
-
-            if arquivo_encontrado_ou_ja_existia:
-                print(f"✅ Áudio processado/verificado: {os.path.basename(final_intended_audio_path)}")
-                # We can't reliably tell from yt-dlp's output alone if it was *just* downloaded
-                # or if it *already existed* without more complex parsing of stdout.
-                return final_intended_audio_path, True # Assume it existed or was just successfully processed
-            else:
-                print(f"⚠️ yt-dlp retornou sucesso, mas o arquivo de áudio '{final_intended_audio_path}' não foi encontrado.")
-        # else (erro no download_process)
-
-        # Se chegou aqui, houve um erro ou o arquivo não foi encontrado após sucesso aparente
-        print(f"⚠️ Erro ao baixar/processar áudio de {url} com yt-dlp.")
-        print(f"   Código de retorno: {download_process.returncode}")
-        print(f"   Saída (stdout):\n{download_process.stdout}")
-        print(f"   Saída (stderr):\n{download_process.stderr}")
-        return None, False
-
-    except subprocess.CalledProcessError as e: # Erro ao obter o nome do arquivo
-        print(f"⚠️ Erro ao tentar obter o nome do arquivo de áudio com yt-dlp para {url}: {e}")
-        print(f"   Comando: {' '.join(e.cmd)}")
-        print(f"   Saída yt-dlp (stdout):\n{e.stdout}")
-        print(f"   Saída yt-dlp (stderr):\n{e.stderr}")
-        return None, False
-
-    except Exception as e:
-        print(f"⚠️ Erro inesperado ao tentar baixar áudio de {url}: {e}")
-        return None, False
-
-def resolver_nome_arquivo_yt_dlp(url, path_destino_param, extrair_audio=False, audio_format="mp3"):
-    """
-    Resolve o nome do arquivo que yt-dlp usaria, sem baixá-lo.
-    Retorna o caminho completo esperado para o arquivo no diretório de destino.
-    """
-    try:
-        cmd_get_filename = [
-            "yt-dlp",
-            "--get-filename",
-            "--no-warnings",
-            "-o", "%(title)s.%(ext)s", # Template para o nome do arquivo base
-            url
-        ]
-
-        process = subprocess.run(cmd_get_filename, capture_output=True, text=True, check=True, encoding='utf-8')
-
-        resolved_filename_lines = process.stdout.strip().split('\n')
-        base_filename_from_yt_dlp = resolved_filename_lines[-1] if resolved_filename_lines else None
-
-        if not base_filename_from_yt_dlp:
-            print(f"⚠️ Não foi possível obter o nome do arquivo base para {url} via --get-filename.")
-            print(f"   Saída yt-dlp (stdout):\n{process.stdout}")
-            print(f"   Saída yt-dlp (stderr):\n{process.stderr}")
-            return None
-
-        if extrair_audio:
-            base, _ = os.path.splitext(base_filename_from_yt_dlp)
-            final_filename = base + "." + audio_format
-        else:
-            final_filename = base_filename_from_yt_dlp
-
-        path_destino_abs = os.path.abspath(path_destino_param)
-        final_expected_path = os.path.join(path_destino_abs, final_filename)
-        return final_expected_path
-
-    except subprocess.CalledProcessError as e:
-        print(f"⚠️ Erro ao tentar obter o nome do arquivo com yt-dlp para {url}: {e.stderr.strip() if e.stderr else 'Erro desconhecido'}")
-        return None
-    except Exception as e: # Captura FileNotFoundError e outros
-        print(f"⚠️ Erro inesperado ao resolver nome do arquivo para {url}: {e}")
-        return None
-
-def format_seconds_to_hhmmssff(seconds, fps=25):
-    """
-    Converte segundos para o formato HH:MM:SS:FF.
-    Args:
-        seconds (float): Tempo em segundos.
-        fps (int): Taxa de quadros por segundo para calcular o componente FF.
-    Returns:
-        str: String formatada como HH:MM:SS:FF.
-    """
-    if not isinstance(fps, int) or fps <= 0:
-        fps = 25 # Fallback para FPS padrão
-
-    total_frames = round(seconds * fps)
-    ff = total_frames % fps
-    total_seconds_int = total_frames // fps
-
-    ss = total_seconds_int % 60
-    total_minutes = total_seconds_int // 60
-    mm = total_minutes % 60
-    hh = total_minutes // 60
-
-    return f"{hh:02d}:{mm:02d}:{ss:02d}:{ff:02d}"
-
-def analisar_batidas_audio(caminho_audio, pasta_saida_batidas, fps_para_timestamp=25):
-    """
-    Analisa um arquivo de áudio para detectar batidas, calcula suas amplitudes
-    e salva os timestamps (filtrados ou não) e os dados completos em arquivos .txt.
-
-    Args:
-        caminho_audio (str): Caminho para o arquivo de áudio (ex: .mp3).
-        pasta_saida_batidas (str): Diretório onde o arquivo .txt com os timestamps das batidas será salvo.
-                                   Serão criados 'beats.txt' (timestamps) e
-                                   'beats_with_amplitude.txt' (timestamps,amplitude).
-        fps_para_timestamp (int): FPS a ser usado para formatar o timestamp de saída como HH:MM:SS:FF.
-    Returns:
-        tuple: (Caminho para 'beats.txt', Caminho para 'beats_with_amplitude.txt') ou (None, None) em caso de falha.
-    """
-    try: # Importa librosa e numpy aqui para que o script principal possa rodar sem eles se a análise estiver desabilitada
-        import librosa  # Biblioteca para análise de áudio
-        import numpy as np # Necessário para manipulação de arrays
-    except ImportError:
-        print("⚠️ A biblioteca 'librosa' ou 'numpy' não está instalada. Não é possível analisar batidas.")
-        print("   Por favor, instale com: pip install librosa numpy")
-        return None, None
-
-    try:
-        print(f"🥁 Analisando batidas para: {os.path.basename(caminho_audio)}")
-
-        # Carrega o arquivo de áudio. librosa.load retorna o array de áudio (y) e a taxa de amostragem (sr)
-        y, sr = librosa.load(caminho_audio)
-
-        # Calculate onset strength envelope
-        # This gives a measure of "how much is happening" at each point in time,
-        # often related to percussive energy.
-        onset_envelope = librosa.onset.onset_strength(y=y, sr=sr)
-
-        # Detect onsets (peaks in the onset envelope)
-        # These are the moments identified as "beats" or significant percussive events.
-        # Onsets are generally more suitable for capturing
-        # eventos percussivos marcantes (kicks, snares, etc.) do que o pulso principal.
-        # Retorna os índices dos frames onde onsets foram detectados.
-        onset_frames = librosa.onset.onset_detect(onset_envelope=onset_envelope, sr=sr, units='frames')
-
-        # Get the strength value at each detected onset frame
-        # Ensure onset_frames are within the bounds of onset_envelope
-        valid_onset_frames = [f for f in onset_frames if 0 <= f < len(onset_envelope)]
-        onset_amplitudes = onset_envelope[valid_onset_frames]
-        onset_times = librosa.frames_to_time(valid_onset_frames, sr=sr)
-
-
-        if not onset_times.size > 0: # Verifica se foram detectados onsets válidos
-            print(f"ℹ️ Nenhuma batida/onset marcante detectado em '{os.path.basename(caminho_audio)}'. Nenhum arquivo de batidas será gerado.")
-            # Limpa a pasta de saída de batidas se ela existir, pois não há batidas válidas
-            if os.path.exists(pasta_saida_batidas):
-                 print(f"   Limpando pasta de análise de batidas (nenhuma batida detectada): {pasta_saida_batidas}")
-                 try:
-                     shutil.rmtree(pasta_saida_batidas)
-                 except Exception as e:
-                     print(f'⚠️ Falha ao deletar pasta {pasta_saida_batidas}. Razão: {e}')
-            return None, None
-
-        if not os.path.exists(pasta_saida_batidas):
-            try:
-                os.makedirs(pasta_saida_batidas, exist_ok=True)
-            except OSError as e:
-                print(f"⚠️ Erro ao criar pasta para arquivos de batidas {pasta_saida_batidas}: {e}")
-                return None, None
-        else:
-            # Limpa a pasta de saída de batidas antes de escrever os novos arquivos
-            print(f"   Limpando pasta de análise de batidas: {pasta_saida_batidas}")
-            for filename in os.listdir(pasta_saida_batidas):
-                file_path = os.path.join(pasta_saida_batidas, filename)
-                try:
-                    if os.path.isfile(file_path) or os.path.islink(file_path):
-                        os.unlink(file_path)
-                    elif os.path.isdir(file_path):
-                        shutil.rmtree(file_path)
-                except Exception as e:
-                    print(f'⚠️ Falha ao deletar {file_path}. Razão: {e}')
-
-
-        # Combine timestamps and amplitudes, filtering out negative times
-        beat_data = []
-        for t, amp in zip(onset_times, onset_amplitudes):
-            if t >= 0:
-                # Convert amplitude to float explicitly just in case
-                beat_data.append({'timestamp_sec': t, 'timestamp_hhmmssff': format_seconds_to_hhmmssff(t, fps_para_timestamp), 'amplitude': float(amp)})
-
-        if not beat_data:
-             print(f"ℹ️ Nenhuma batida válida (tempo >= 0) detectada em '{os.path.basename(caminho_audio)}'. Nenhum arquivo de batidas será gerado.")
-             return None, None
-
-        # Save beats with amplitude
-        arquivo_beats_with_amplitude = os.path.join(pasta_saida_batidas, "beats_with_amplitude.txt")
-        with open(arquivo_beats_with_amplitude, "w", encoding='utf-8') as f_amp:
-            for item in beat_data:
-                # Format amplitude to a few decimal places for readability/consistency
-                f_amp.write(f"{item['timestamp_hhmmssff']},{item['amplitude']:.6f}\n")
-
-        # Save beats (timestamps only) - this will be the one potentially filtered later
-        arquivo_saida_batidas = os.path.join(pasta_saida_batidas, "beats.txt")
-        with open(arquivo_saida_batidas, "w", encoding='utf-8') as f_beats:
-             for item in beat_data:
-                 f_beats.write(f"{item['timestamp_hhmmssff']}\n")
-
-        print(f"✅ Dados de batidas ({len(beat_data)} eventos) salvos:")
-        print(f"   - Timestamps e amplitudes: {arquivo_beats_with_amplitude}")
-        print(f"   - Apenas timestamps: {arquivo_saida_batidas}")
-        return arquivo_saida_batidas, arquivo_beats_with_amplitude
-
-    except Exception as e:
-        print(f"⚠️ Erro ao analisar batidas de '{os.path.basename(caminho_audio)}': {e}")
-        return None, None
 
 def parse_hhmmssff_to_seconds(time_str, fps=25):
     """
@@ -812,7 +285,13 @@ def carregar_configuracao(caminho_arquivo_config="config.json"):
         "criar_edit_final_do_json": False,
         "generate_edit_from_beats": { # Agora é um objeto
             "enabled": False,
-            "min_scene_duration_seconds": 2.0 # Valor padrão
+            "min_scene_duration_seconds": 2.0, # Valor padrão
+            "use_scenes": False # Novo campo, padrão para False
+        },
+        "detectar_cortes_de_cena_video": { # Nova seção de configuração
+            "enabled": True,
+            "video_source_index": 0, # Índice do vídeo na links.txt para analisar (0 para o primeiro)
+            "threshold": 27.0
         }
     }
     if os.path.exists(caminho_arquivo_config):
@@ -825,15 +304,23 @@ def carregar_configuracao(caminho_arquivo_config="config.json"):
 
                 # Ensure sub-structures are dictionaries and have expected keys, handling old formats
                 if isinstance(config_padrao.get("generate_edit_from_beats"), bool): # Converte formato antigo
-                    config_padrao["generate_edit_from_beats"] = {"enabled": config_padrao["generate_edit_from_beats"], "min_scene_duration_seconds": 2.0}
+                    config_padrao["generate_edit_from_beats"] = {"enabled": config_padrao["generate_edit_from_beats"], "min_scene_duration_seconds": 2.0, "use_scenes": False}
                 elif not isinstance(config_padrao.get("generate_edit_from_beats"), dict): # Se não for bool nem dict, reseta
-                    config_padrao["generate_edit_from_beats"] = {"enabled": False, "min_scene_duration_seconds": 2.0}
+                    config_padrao["generate_edit_from_beats"] = {"enabled": False, "min_scene_duration_seconds": 2.0, "use_scenes": False}
+                else: # Garante que a nova chave use_scenes exista se generate_edit_from_beats for um dict
+                    if "use_scenes" not in config_padrao["generate_edit_from_beats"]:
+                        config_padrao["generate_edit_from_beats"]["use_scenes"] = False
+
 
                 # Handle potential old boolean format for filtrar_batidas_por_amplitude (if it ever existed as bool)
                 if isinstance(config_padrao.get("filtrar_batidas_por_amplitude"), bool):
                      config_padrao["filtrar_batidas_por_amplitude"] = {"enabled": config_padrao["filtrar_batidas_por_amplitude"], "min_amplitude_percentage": 75}
                 elif not isinstance(config_padrao.get("filtrar_batidas_por_amplitude"), dict):
                      config_padrao["filtrar_batidas_por_amplitude"] = {"enabled": True, "min_amplitude_percentage": 75}
+                
+                # Garante que a subestrutura de detectar_cortes_de_cena_video exista
+                if not isinstance(config_padrao.get("detectar_cortes_de_cena_video"), dict):
+                    config_padrao["detectar_cortes_de_cena_video"] = {"enabled": True, "video_source_index": 0, "threshold": 27.0}
 
 
                 print(f"⚙️ Configurações carregadas de '{caminho_arquivo_config}'.")
@@ -846,12 +333,20 @@ def carregar_configuracao(caminho_arquivo_config="config.json"):
         print(f"ℹ️ Arquivo de configuração '{caminho_arquivo_config}' não encontrado. Usando configurações padrão.")
     return config_padrao
 
-def gerar_edit_json_pelas_batidas(caminho_arquivo_batidas, pasta_frames_video_fonte, nome_video_fonte_no_json, nome_audio_fonte_no_json, min_duration_sec, caminho_saida_edit_json="edit.json"):
+def gerar_edit_json_pelas_batidas(
+    caminho_arquivo_batidas,
+    pasta_frames_video_fonte, # Usado se use_scenes for false
+    nome_video_fonte_no_json,
+    nome_audio_fonte_no_json,
+    generate_edit_config, # Contém min_scene_duration_seconds e use_scenes
+    pasta_videos_baixados, # Para localizar cenas_detectadas.json
+    caminho_saida_edit_json="edit.json"
+    ):
     """
     Gera um arquivo edit.json usando os tempos de um arquivo de batidas e frames aleatórios.
     """
     print(f"\n🔄 Gerando '{caminho_saida_edit_json}' a partir de batidas e frames aleatórios...")
-    if not os.path.exists(caminho_arquivo_batidas):
+    if not caminho_arquivo_batidas or not os.path.exists(caminho_arquivo_batidas):
         print(f"⚠️ Arquivo de batidas não encontrado: {caminho_arquivo_batidas}")
         return False
     if not os.path.exists(pasta_frames_video_fonte):
@@ -859,6 +354,9 @@ def gerar_edit_json_pelas_batidas(caminho_arquivo_batidas, pasta_frames_video_fo
         return False
 
     try:
+        min_duration_sec = generate_edit_config.get("min_scene_duration_seconds", 2.0)
+        use_scenes_from_detection = generate_edit_config.get("use_scenes", False)
+
         with open(caminho_arquivo_batidas, "r", encoding='utf-8') as f:
             beat_timestamps_hhmmssff = [line.strip() for line in f if line.strip()]
 
@@ -866,29 +364,44 @@ def gerar_edit_json_pelas_batidas(caminho_arquivo_batidas, pasta_frames_video_fo
             print(f"⚠️ Não há batidas suficientes em '{caminho_arquivo_batidas}' para criar cenas (necessário >= 2).")
             return False
 
-        available_frames_files = [f for f in os.listdir(pasta_frames_video_fonte) if f.startswith("frame_") and f.lower().endswith(".jpg")]
-        if not available_frames_files:
-            print(f"⚠️ Nenhum arquivo de frame encontrado em '{pasta_frames_video_fonte}'.")
-            return False
-
-        # Extrai os números dos frames dos nomes dos arquivos
-        # Ex: frame_000023_time_1.23s.jpg -> "23"
         available_frame_numbers = []
-        for frame_file in available_frames_files:
-            try:
-                parts = frame_file.split('_')
-                if len(parts) > 1 and parts[0] == "frame":
-                    # Converte para int e depois para str para remover zeros à esquerda
-                    frame_num_str = str(int(parts[1]))
-                    available_frame_numbers.append(frame_num_str)
-            except (ValueError, IndexError):
-                print(f"   Aviso: Não foi possível extrair o número do frame de '{frame_file}'. Pulando.")
+        detected_scenes_data = []
 
-        if not available_frame_numbers:
-            print(f"⚠️ Nenhum número de frame válido pôde ser extraído dos arquivos em '{pasta_frames_video_fonte}'.")
-            return False
+        if use_scenes_from_detection:
+            path_cenas_detectadas = os.path.join(pasta_videos_baixados, "cenas_detectadas.json")
+            if os.path.exists(path_cenas_detectadas):
+                with open(path_cenas_detectadas, "r", encoding='utf-8') as f_scenes:
+                    detected_scenes_data = json.load(f_scenes)
+                if not detected_scenes_data:
+                    print(f"⚠️ Arquivo 'cenas_detectadas.json' está vazio. Não é possível usar cenas detectadas.")
+                    use_scenes_from_detection = False # Fallback para frames se o arquivo estiver vazio
+                else:
+                    print(f"   Usando cenas do arquivo: {path_cenas_detectadas}")
+            else:
+                print(f"⚠️ Arquivo 'cenas_detectadas.json' não encontrado em '{pasta_videos_baixados}'. Não é possível usar cenas detectadas.")
+                use_scenes_from_detection = False # Fallback para frames
 
-        # min_duration_sec agora é passado como argumento
+        if not use_scenes_from_detection: # Se use_scenes for false ou fallback
+            print(f"   Usando frames aleatórios de: {pasta_frames_video_fonte}")
+            available_frames_files = [f for f in os.listdir(pasta_frames_video_fonte) if f.startswith("frame_") and f.lower().endswith(".jpg")]
+            if not available_frames_files:
+                print(f"⚠️ Nenhum arquivo de frame encontrado em '{pasta_frames_video_fonte}'.")
+                return False
+            for frame_file in available_frames_files:
+                try:
+                    parts = frame_file.split('_')
+                    if len(parts) > 1 and parts[0] == "frame":
+                        frame_num_str = str(int(parts[1]))
+                        available_frame_numbers.append(frame_num_str)
+                except (ValueError, IndexError):
+                    print(f"   Aviso: Não foi possível extrair o número do frame de '{frame_file}'. Pulando.")
+            if not available_frame_numbers:
+                print(f"⚠️ Nenhum número de frame válido pôde ser extraído dos arquivos em '{pasta_frames_video_fonte}'.")
+                return False
+
+
+
+
         # FPS usado para parsear os timestamps HH:MM:SS:FF do arquivo de batidas.
         # Deve ser consistente com o FPS usado ao gerar esse arquivo.
         fps_for_parsing = 25
@@ -920,13 +433,30 @@ def gerar_edit_json_pelas_batidas(caminho_arquivo_batidas, pasta_frames_video_fo
                 next_beat_index_for_end += 1 # Tenta a próxima batida como final potencial
 
             if suitable_audio_end_str:
-                selected_frame_number = random.choice(available_frame_numbers)
-                scenes.append({
-                    "audio_start": audio_start_str,
-                    "audio_end": suitable_audio_end_str,
-                    "frame": selected_frame_number
-                })
-                # A próxima cena deve começar a partir da batida que foi usada como final da cena atual
+                scene_entry = {"audio_start": audio_start_str, "audio_end": suitable_audio_end_str}
+                added_scene_content = False
+
+                if use_scenes_from_detection and detected_scenes_data:
+                    current_audio_duration = parse_hhmmssff_to_seconds(suitable_audio_end_str, fps_for_parsing) - parse_hhmmssff_to_seconds(audio_start_str, fps_for_parsing)
+                    candidate_detected_scenes = [
+                        s for s in detected_scenes_data 
+                        if (s['fim_segundos'] - s['inicio_segundos']) >= current_audio_duration
+                    ]
+                    if candidate_detected_scenes:
+                        chosen_detected_scene = random.choice(candidate_detected_scenes)
+                        scene_entry["scene_cuted"] = chosen_detected_scene["cena_numero"]
+                        added_scene_content = True
+                    else:
+                        print(f"   ℹ️ Nenhuma cena detectada com duração suficiente para o segmento de áudio {audio_start_str} - {suitable_audio_end_str}. Pulando este segmento.")
+                
+                elif not use_scenes_from_detection and available_frame_numbers: # Fallback ou modo frame
+                    selected_frame_number = random.choice(available_frame_numbers)
+                    scene_entry["frame"] = selected_frame_number
+                    added_scene_content = True
+
+                if added_scene_content:
+                    scenes.append(scene_entry)
+                
                 i = next_beat_index_for_end
             else:
                 # Se nenhum final adequado foi encontrado para audio_start_str, avança para a próxima batida inicial potencial.
@@ -946,6 +476,7 @@ def gerar_edit_json_pelas_batidas(caminho_arquivo_batidas, pasta_frames_video_fo
     except Exception as e:
         print(f"⚠️ Erro ao gerar '{caminho_saida_edit_json}' a partir das batidas: {e}")
         return False
+
 
 # Exemplo de uso
 if __name__ == "__main__":
@@ -999,7 +530,9 @@ if __name__ == "__main__":
 
         if youtube_url_musica and config.get("baixar_audio_da_musica"):
             print(f"\n🎵 Tentando baixar áudio de: {youtube_url_musica}")
-            caminho_do_arquivo_de_musica, _ = baixar_audio_youtube(youtube_url_musica, songs_directory)
+            # Importar aqui para evitar dependência se não for usado
+            from audio_processing import baixar_audio_youtube as download_audio_func
+            caminho_do_arquivo_de_musica, _ = download_audio_func(youtube_url_musica, songs_directory)
             if caminho_do_arquivo_de_musica:
                 print(f"🎶 Áudio baixado/localizado via download: {caminho_do_arquivo_de_musica}")
             else:
@@ -1163,11 +696,46 @@ if __name__ == "__main__":
     elif not config.get("criar_edit_final_do_json"): # Só imprime se nenhuma outra ação principal foi habilitada
         print("\nℹ️ Download de vídeos e extração de frames desabilitados nas configurações.")
 
+    # --- 4.1. Detecção de Cortes de Cena no Vídeo (se habilitado) ---
+    scene_detection_config = config.get("detectar_cortes_de_cena_video", {})
+    if isinstance(scene_detection_config, dict) and scene_detection_config.get("enabled"):
+        print("\n⚙️ Tentando detectar cortes de cena no vídeo...")
+        video_idx_to_analyze = scene_detection_config.get("video_source_index", 0)
+        detection_threshold = scene_detection_config.get("threshold", 27.0)
+        
+        video_para_analise_de_cena = None
+        
+        if os.path.exists(arquivo_links):
+            with open(arquivo_links, "r", encoding='utf-8') as f_links_sd:
+                links_videos_sd = [linha.strip() for linha in f_links_sd if linha.strip() and not linha.startswith("#")]
+            
+            if 0 <= video_idx_to_analyze < len(links_videos_sd):
+                url_video_para_cena = links_videos_sd[video_idx_to_analyze]
+                # Tenta localizar o vídeo baixado correspondente a esta URL
+                caminho_video_esperado_para_cena = resolver_nome_arquivo_yt_dlp(url_video_para_cena, pasta_destino_videos, extrair_audio=False)
+                if caminho_video_esperado_para_cena and os.path.exists(caminho_video_esperado_para_cena):
+                    video_para_analise_de_cena = caminho_video_esperado_para_cena
+                else:
+                    print(f"   ⚠️ Vídeo para análise de cena (índice {video_idx_to_analyze} de links.txt) não encontrado em '{pasta_destino_videos}'.")
+                    if caminho_video_esperado_para_cena:
+                         print(f"      Caminho esperado: {caminho_video_esperado_para_cena}")
+            else:
+                print(f"   ⚠️ Índice de vídeo para análise de cena ({video_idx_to_analyze}) fora do intervalo de links em '{arquivo_links}'.")
+        else:
+            print(f"   ⚠️ Arquivo de links '{arquivo_links}' não encontrado. Não é possível determinar o vídeo para análise de cena.")
+
+        if video_para_analise_de_cena:
+            output_json_scene_cuts = os.path.join(pasta_destino_videos, "cenas_detectadas.json") # Nome do arquivo de saída alterado
+            detectar_cortes_de_cena(video_para_analise_de_cena, output_json_scene_cuts, threshold=detection_threshold)
+        else:
+            print("   ℹ️ Detecção de cortes de cena pulada: vídeo fonte não pôde ser determinado ou encontrado.")
+    else:
+        print("\nℹ️ Detecção de cortes de cena no vídeo desabilitada nas configurações.")
+
     # --- 5. Gerar edit.json a partir das batidas (se habilitado) ---
     generate_edit_config = config.get("generate_edit_from_beats", {})
     if isinstance(generate_edit_config, dict) and generate_edit_config.get("enabled"):
         print("\n⚙️ Tentando gerar 'edit.json' a partir de arquivos existentes (batidas e frames)...")
-        min_scene_duration = generate_edit_config.get("min_scene_duration_seconds", 2.0) # Pega do config ou usa default
 
         caminho_batidas_a_usar = None
         nome_audio_para_json = None
@@ -1240,8 +808,9 @@ if __name__ == "__main__":
                  pasta_frames_a_usar,
                  nome_video_para_json,
                  nome_audio_para_json,
-                 min_scene_duration,
-                 edit_json_file
+                 generate_edit_config, # Passa todo o sub-dicionário de config
+                 pasta_destino_videos, # Para localizar cenas_detectadas.json
+                 edit_json_file # Nome do arquivo de saída
              )
         else:
             print("⚠️ Não foi possível gerar 'edit.json' a partir das batidas: um ou mais arquivos/pastas necessários não foram encontrados ou determinados.")
@@ -1264,7 +833,11 @@ if __name__ == "__main__":
             except json.JSONDecodeError as e:
                 print(f"⚠️ Erro ao decodificar '{edit_json_file}': {e}. Não será possível criar o edit.")
             except Exception as e:
+                import traceback
                 print(f"⚠️ Erro ao processar '{edit_json_file}' para criação do edit: {e}")
+                print("Detalhes do erro:")
+                traceback.print_exc()
+
         else:
             print(f"⚠️ Arquivo '{edit_json_file}' não encontrado. Criação do edit final pulada.")
     if not config.get("criar_edit_final_do_json"):
