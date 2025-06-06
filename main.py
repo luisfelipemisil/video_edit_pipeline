@@ -124,7 +124,27 @@ def find_frame_by_number(frames_dir, target_frame_number_str):
 
     return None
 
-def criar_edite_do_json(edit_data):
+def get_audio_duration(audio_path):
+    """
+    Obtém a duração de um arquivo de áudio usando ffprobe.
+    Retorna a duração em segundos como float, ou None em caso de erro.
+    """
+    cmd = [
+        "ffprobe", "-v", "error", "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1", audio_path
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        return float(result.stdout.strip())
+    except subprocess.CalledProcessError as e:
+        print(f"Erro ao obter duração de '{audio_path}': {e.stderr}")
+    except FileNotFoundError:
+        print("Erro: ffprobe não encontrado. Certifique-se de que o FFmpeg (com ffprobe) está instalado e no PATH.")
+    except ValueError:
+        print(f"Erro: Não foi possível converter a duração de '{audio_path}' para float.")
+    return None
+
+def criar_edite_do_json(edit_data, config):
     """
     Cria um vídeo editado com base nas especificações do arquivo JSON.
     """
@@ -133,12 +153,13 @@ def criar_edite_do_json(edit_data):
     videos_baixados_dir = "videos_baixados"
     songs_dir = "songs"
     temp_dir = "temp_edit_files"
-    output_edit_filename = "edit_final.mp4"
+    # output_edit_filename = "edit_final.mp4" # Removido pois agora é por qualidade
     video_fps_output = 25 # FPS para os clipes de cena gerados e para parsear timestamps FF
 
     source_video_name = edit_data.get("source_video")
     source_audio_name = edit_data.get("source_audio")
     scenes_data = edit_data.get("scenes", [])
+    all_detected_scenes_data = None # Para carregar uma vez se necessário
 
     if not source_video_name or not source_audio_name:
         print("⚠️ 'source_video' ou 'source_audio' não encontrado no edit.json.")
@@ -147,12 +168,15 @@ def criar_edite_do_json(edit_data):
     full_audio_path = os.path.join(songs_dir, source_audio_name)
     video_frames_dir_name = os.path.splitext(source_video_name)[0] + "_frames"
     full_video_frames_dir = os.path.join(videos_baixados_dir, video_frames_dir_name)
+    full_source_video_path = os.path.join(videos_baixados_dir, source_video_name)
 
     if not os.path.exists(full_audio_path):
         print(f"⚠️ Arquivo de áudio fonte não encontrado: {full_audio_path}")
         return
-    if not os.path.exists(full_video_frames_dir):
-        print(f"⚠️ Diretório de frames do vídeo fonte não encontrado: {full_video_frames_dir}")
+    # O diretório de frames só é necessário se estivermos usando frames.
+    # O vídeo fonte original é necessário se estivermos usando scene_cuted.
+    if not os.path.exists(full_source_video_path):
+        print(f"⚠️ Arquivo de vídeo fonte não encontrado: {full_source_video_path}")
         return
 
     if os.path.exists(temp_dir):
@@ -160,6 +184,7 @@ def criar_edite_do_json(edit_data):
     os.makedirs(temp_dir, exist_ok=True)
 
     scene_clip_paths = []
+    total_main_clips_duration_sec = 0.0 # Para controlar o drawtext
 
     total_scenes = len(scenes_data)
     print(f"  Total de cenas a processar: {total_scenes}")
@@ -174,10 +199,12 @@ def criar_edite_do_json(edit_data):
 
         audio_start_str = scene.get("audio_start")
         audio_end_str = scene.get("audio_end")
-        target_frame_number_str = scene.get("frame") # Agora é o número do frame
+        target_frame_number_str = scene.get("frame")
+        target_scene_cuted_number = scene.get("scene_cuted")
 
-        if not all([audio_start_str, audio_end_str, target_frame_number_str]):
-            print(f"⚠️ Dados incompletos para a cena {i+1}. Pulando.")
+        # Verifica se temos informações de áudio e pelo menos uma fonte visual (frame ou cena cortada)
+        if not (audio_start_str and audio_end_str and (target_frame_number_str or target_scene_cuted_number)):
+            print(f"⚠️ Dados incompletos para a cena {i+1} (áudio ou fonte visual ausente). Pulando.")
             continue
 
         try:
@@ -192,11 +219,6 @@ def criar_edite_do_json(edit_data):
         audio_duration_sec = audio_end_sec - audio_start_sec
         if audio_duration_sec <= 0:
             print(f"⚠️ Duração do áudio inválida para a cena {i+1} ({audio_duration_sec}s). Pulando.")
-            continue
-
-        frame_image_path = find_frame_by_number(full_video_frames_dir, target_frame_number_str)
-        if not frame_image_path:
-            print(f"⚠️ Não foi possível encontrar o frame para a cena {i+1}. Pulando.")
             continue
 
         temp_audio_clip_path = os.path.join(temp_dir, f"scene_{i+1}_audio.aac") # Usar AAC para compatibilidade
@@ -220,15 +242,68 @@ def criar_edite_do_json(edit_data):
             print(f"   ffmpeg stderr: {audio_process_result.stderr}")
             continue # Pula para a próxima cena
 
+        cmd_video_scene = None
+        if target_scene_cuted_number:
+            if all_detected_scenes_data is None: # Carrega apenas uma vez
+                path_cenas_detectadas_json = os.path.join(videos_baixados_dir, "cenas_detectadas.json")
+                if os.path.exists(path_cenas_detectadas_json):
+                    try:
+                        with open(path_cenas_detectadas_json, "r", encoding='utf-8') as f_s:
+                            all_detected_scenes_data = json.load(f_s)
+                    except json.JSONDecodeError:
+                        print(f"⚠️ Erro ao decodificar 'cenas_detectadas.json'. Não é possível usar cenas cortadas.")
+                        all_detected_scenes_data = [] # Marca como problemático
+                else:
+                    print(f"⚠️ Arquivo 'cenas_detectadas.json' não encontrado. Não é possível usar cenas cortadas.")
+                    all_detected_scenes_data = [] # Marca como não encontrado
+            
+            detected_scene_info = None
+            if isinstance(all_detected_scenes_data, list):
+                for det_scene in all_detected_scenes_data:
+                    if det_scene.get("cena_numero") == target_scene_cuted_number:
+                        detected_scene_info = det_scene
+                        break
+            
+            if detected_scene_info and 'inicio_segundos' in detected_scene_info:
+                video_cut_start_sec = detected_scene_info['inicio_segundos']
+                cmd_video_scene = [
+                    "ffmpeg", "-y",
+                    "-ss", str(video_cut_start_sec),      # Ponto de início no vídeo fonte
+                    "-i", full_source_video_path,         # Vídeo fonte original
+                    "-i", temp_audio_clip_path,           # Áudio já cortado para esta cena
+                    "-t", str(audio_duration_sec),        # Duração do clipe final (igual ao áudio)
+                    "-map", "0:v:0",                      # Mapeia vídeo do primeiro input (vídeo fonte)
+                    "-map", "1:a:0",                      # Mapeia áudio do segundo input (áudio cortado)
+                    "-c:v", "libx264",                    # Re-encoder vídeo
+                    "-c:a", "copy",                       # Copia o áudio (já está em AAC)
+                    "-pix_fmt", "yuv420p",
+                    "-shortest",                          # Garante que o clipe não seja maior que a entrada mais curta
+                    temp_video_clip_path
+                ]
+            else:
+                print(f"⚠️ Informações para 'scene_cuted' {target_scene_cuted_number} não encontradas em 'cenas_detectadas.json' ou formato inválido. Pulando cena {i+1}.")
+                continue
 
-        # Criar clipe de vídeo a partir do frame e do áudio cortado
-        cmd_video_scene = [
-            "ffmpeg", "-y", "-loop", "1", "-framerate", str(video_fps_output), "-i", frame_image_path,
-            "-i", temp_audio_clip_path,
-            "-c:v", "libx264", "-tune", "stillimage", "-c:a", "copy", # Copia o áudio já em AAC
-            "-pix_fmt", "yuv420p", "-t", str(audio_duration_sec), "-shortest",
-            temp_video_clip_path
-        ]
+        elif target_frame_number_str:
+            if not os.path.exists(full_video_frames_dir):
+                 print(f"⚠️ Diretório de frames '{full_video_frames_dir}' não encontrado, necessário para usar 'frame'. Pulando cena {i+1}.")
+                 continue
+            frame_image_path = find_frame_by_number(full_video_frames_dir, target_frame_number_str)
+            if not frame_image_path:
+                print(f"⚠️ Não foi possível encontrar o frame '{target_frame_number_str}' para a cena {i+1}. Pulando.")
+                continue
+            cmd_video_scene = [
+                "ffmpeg", "-y", "-loop", "1", "-framerate", str(video_fps_output), "-i", frame_image_path,
+                "-i", temp_audio_clip_path,
+                "-c:v", "libx264", "-tune", "stillimage", "-c:a", "copy",
+                "-pix_fmt", "yuv420p", "-t", str(audio_duration_sec), "-shortest",
+                temp_video_clip_path
+            ]
+
+        if not cmd_video_scene: # Se nenhuma fonte visual foi processada
+            print(f"⚠️ Não foi possível determinar o comando de vídeo para a cena {i+1}. Pulando.")
+            continue
+
         # print(f"    Criando clipe da cena: {' '.join(cmd_video_scene)}") # Opcional: remover para limpar o output
         video_scene_process_result = subprocess.run(cmd_video_scene, capture_output=True, text=True)
         if video_scene_process_result.returncode != 0:
@@ -238,34 +313,198 @@ def criar_edite_do_json(edit_data):
             print(f"   ffmpeg stderr: {video_scene_process_result.stderr}")
             continue # Pula para a próxima cena
         scene_clip_paths.append(temp_video_clip_path)
+        total_main_clips_duration_sec += audio_duration_sec # Acumula a duração dos clipes principais
 
     print(flush=True) # Nova linha após a barra de progresso concluir e garantir flush
     if not scene_clip_paths:
         print("⚠️ Nenhuma cena foi processada. Edição final não será criada.")
         shutil.rmtree(temp_dir)
-        return
+        return # Sai da função se não há clipes para processar
 
-    # Concatenar clipes de cena
-    filelist_path = os.path.join(temp_dir, "filelist.txt")
-    with open(filelist_path, "w") as f:
-        for clip_path in scene_clip_paths:
-            # ffmpeg concat demuxer requer caminhos relativos (ao filelist.txt) ou absolutos.
-            # Para simplicidade, se os clipes estão no mesmo dir que filelist.txt, só o nome do arquivo.
-            f.write(f"file '{os.path.basename(clip_path)}'\n")
+    # --- Preparar clipe de Ebook (gerar se não existir) e lista de arquivos para concatenação ---
+    ebook_dir = "ebook"  # Nova pasta para os arquivos fonte do ebook
+    ebook_source_image = os.path.join(ebook_dir, "ebook.png")
+    ebook_source_audio = os.path.join(ebook_dir, "ebook.mp3")
 
-    cmd_concat = [
-        "ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", filelist_path,
-        "-c", "copy", output_edit_filename
-    ]
-    print(f"\n  Concatenando cenas para '{output_edit_filename}': {' '.join(cmd_concat)}")
-    concat_process_result = subprocess.run(cmd_concat, capture_output=True, text=True)
-    if concat_process_result.returncode == 0:
-        print(f"✅ Edição final '{output_edit_filename}' criada com sucesso!")
+    temp_ebook_clip_filename = "ebook_clip.mp4" # Nome do arquivo do clipe do ebook na pasta temp
+    temp_ebook_clip_path = os.path.join(temp_dir, temp_ebook_clip_filename) # Caminho completo na pasta temp
+
+    path_for_ebook_in_filelist = None
+
+    # Gerar clipe de ebook sempre e salvar na pasta temporária
+    if os.path.exists(ebook_source_image) and os.path.exists(ebook_source_audio):
+        print(f"   ⚙️ Gerando clipe de ebook a partir de '{ebook_source_image}' e '{ebook_source_audio}' para '{temp_ebook_clip_path}'...")
+        duration_sec = get_audio_duration(ebook_source_audio)
+        if duration_sec and duration_sec > 0:
+            cmd_create_ebook = [
+                "ffmpeg", "-y",
+                "-loop", "1", "-framerate", str(video_fps_output), "-i", ebook_source_image,
+                "-i", ebook_source_audio,
+                "-map", "0:v:0", # Mapeia vídeo do primeiro input (imagem)
+                "-map", "1:a:0", # Mapeia áudio do segundo input (arquivo de áudio)
+                "-c:v", "libx264", # Mantém a remoção de -tune stillimage para robustez
+                "-r", str(video_fps_output), # Define explicitamente o FPS do vídeo de saída
+                # Pré-formata o clipe do ebook para o aspect ratio e resolução de saída (1080x1920)
+                "-vf", "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1",
+                "-c:a", "aac", "-b:a", "192k", # Garante áudio AAC
+                "-pix_fmt", "yuv420p",
+                "-t", str(duration_sec),
+                temp_ebook_clip_path # Salva diretamente na pasta temporária
+            ]
+            ebook_create_result = subprocess.run(cmd_create_ebook, capture_output=True, text=True)
+            if ebook_create_result.returncode == 0:
+                if os.path.exists(temp_ebook_clip_path) and os.path.getsize(temp_ebook_clip_path) > 1024: # Ex: > 1KB
+                    print(f"   ✅ Clipe de ebook gerado e salvo em: {temp_ebook_clip_path} (Tamanho: {os.path.getsize(temp_ebook_clip_path)} bytes)")
+                    path_for_ebook_in_filelist = temp_ebook_clip_filename # Usar o nome do arquivo para filelist.txt
+                else:
+                    file_size = os.path.getsize(temp_ebook_clip_path) if os.path.exists(temp_ebook_clip_path) else 'Não existe ou 0'
+                    print(f"   ⚠️ FFmpeg retornou sucesso para clipe de ebook, mas o arquivo '{temp_ebook_clip_path}' é inválido ou muito pequeno (Tamanho: {file_size} bytes).")
+                    print(f"      Comando: {' '.join(cmd_create_ebook)}")
+                    print(f"      ffmpeg stdout: {ebook_create_result.stdout}")
+                    print(f"      ffmpeg stderr: {ebook_create_result.stderr}")
+                    # path_for_ebook_in_filelist permanece None
+            else:
+                print(f"   ⚠️ Erro ao gerar clipe de ebook:")
+                print(f"      Comando: {' '.join(cmd_create_ebook)}")
+                print(f"      ffmpeg stdout: {ebook_create_result.stdout}")
+                print(f"      ffmpeg stderr: {ebook_create_result.stderr}")
+                # path_for_ebook_in_filelist permanece None
+        else:
+            print(f"   ⚠️ Não foi possível obter duração válida para '{ebook_source_audio}'. Clipe de ebook não será gerado.")
     else:
-        print(f"⚠️ Erro ao concatenar vídeos:")
-        print(f"   Comando: {' '.join(cmd_concat)}")
-        print(f"   ffmpeg stdout: {concat_process_result.stdout}")
-        print(f"   ffmpeg stderr: {concat_process_result.stderr}")
+        print(f"   ⚠️ Arquivos fonte '{ebook_source_image}' ou '{ebook_source_audio}' não encontrados na pasta '{ebook_dir}'. Clipe de ebook não será gerado/usado.")
+
+    # Obter configurações de qualidade de saída
+    output_qualities = config.get("output_qualities", [])
+    if not output_qualities:
+        print("⚠️ Nenhuma configuração de qualidade de saída encontrada. Usando qualidade padrão (CRF 23).")
+        output_qualities = [{"name": "default", "crf": 23}] # Fallback padrão
+
+    print("\n✨ Iniciando concatenação e codificação final em diferentes qualidades...")
+    for quality_preset in output_qualities:
+        quality_name = quality_preset.get("name", "custom")
+        crf_value = quality_preset.get("crf", 23) # Default CRF 23 se não especificado
+        
+        # Nome do arquivo de vídeo final para esta qualidade
+        output_edit_filename_quality = f"edit_final_{quality_name}.mp4"
+        # Nome do arquivo intermediário (apenas cenas, com texto)
+        intermediate_scenes_clip_name = f"intermediate_scenes_{quality_name}.mp4" # Usado internamente
+        intermediate_scenes_clip_path = os.path.join(temp_dir, intermediate_scenes_clip_name)
+        # Prepara o nome do vídeo para o filtro drawtext
+        # Tenta usar movie_name do config, senão usa o nome do arquivo de vídeo sem extensão
+        custom_movie_name = config.get("movie_name", "")
+        if custom_movie_name and custom_movie_name.strip():
+            text_to_draw = custom_movie_name.strip()
+        elif source_video_name:
+            text_to_draw = os.path.splitext(source_video_name)[0]
+        else:
+            text_to_draw = "Video Editado"
+        # Escapa aspas simples dentro do nome do arquivo para o filtro drawtext do ffmpeg
+        escaped_text_to_draw = text_to_draw.replace("'", "'\\''")
+        
+        # --- Etapa 1: Concatenar clipes de cena e aplicar filtros (scale, pad, drawtext) ---
+        print(f"\n  -> Etapa 1/2: Gerando clipe de cenas '{intermediate_scenes_clip_name}' (CRF: {crf_value})...")
+
+        drawtext_filter_options = f"drawtext=" \
+                                  f"text='{escaped_text_to_draw}':" \
+                                  f"fontfile='Arial':" \
+                                  f"x=(w-text_w)/2:" \
+                                  f"y=120:" \
+                                  f"fontsize=40:" \
+                                  f"fontcolor=white:" \
+                                  f"box=1:boxcolor=black@0.4:boxborderw=5:" \
+                                  f"enable='1'" # Habilita texto para toda a duração deste clipe de cenas
+
+        vf_after_concat = f"scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black,{drawtext_filter_options}"
+
+        cmd_create_intermediate_scenes = ["ffmpeg", "-y"]
+        for clip_path in scene_clip_paths: # scene_clip_paths contém caminhos completos
+            cmd_create_intermediate_scenes.extend(["-i", clip_path])
+
+        if len(scene_clip_paths) == 1:
+            cmd_create_intermediate_scenes.extend([
+                "-vf", vf_after_concat,
+                "-c:v", "libx264", "-crf", str(crf_value),
+                "-c:a", "aac", "-b:a", "192k",
+                "-pix_fmt", "yuv420p", "-aspect", "9:16",
+                intermediate_scenes_clip_path
+            ])
+        else: # Múltiplos clipes de cena, usar filtro concat
+            filter_complex_str_scenes = ""
+            for i_scene in range(len(scene_clip_paths)):
+                filter_complex_str_scenes += f"[{i_scene}:v:0][{i_scene}:a:0]"
+            filter_complex_str_scenes += f"concat=n={len(scene_clip_paths)}:v=1:a=1[concat_v][concat_a];"
+            filter_complex_str_scenes += f"[concat_v]{vf_after_concat}[final_v]"
+
+            cmd_create_intermediate_scenes.extend([
+                "-filter_complex", filter_complex_str_scenes,
+                "-map", "[final_v]",
+                "-map", "[concat_a]",
+                "-c:v", "libx264", "-crf", str(crf_value),
+                "-c:a", "aac", "-b:a", "192k",
+                "-pix_fmt", "yuv420p", "-aspect", "9:16",
+                intermediate_scenes_clip_path
+            ])
+        intermediate_scenes_result = subprocess.run(cmd_create_intermediate_scenes, capture_output=True, text=True)
+        if intermediate_scenes_result.returncode != 0:
+            print(f"  ⚠️ Erro ao criar clipe de cenas intermediário '{intermediate_scenes_clip_name}':")
+            print(f"     Comando: {' '.join(cmd_create_intermediate_scenes)}")
+            print(f"     ffmpeg stdout: {intermediate_scenes_result.stdout}")
+            print(f"     ffmpeg stderr: {intermediate_scenes_result.stderr}")
+            continue # Pula para a próxima qualidade se esta falhar
+        
+        print(f"  ✅ Clipe de cenas intermediário '{intermediate_scenes_clip_name}' criado.")
+
+        # --- Etapa 2: Concatenar clipe de cenas com clipe de ebook (se existir) ---
+        print(f"  -> Etapa 2/2: Gerando edição final '{output_edit_filename_quality}'...")
+        
+        cmd_final_concat = ["ffmpeg", "-y"]
+        input_files_for_final_concat = [intermediate_scenes_clip_path] # Caminho completo
+
+        # path_for_ebook_in_filelist é o nome do arquivo (ex: "ebook_clip.mp4") se gerado com sucesso
+        # temp_ebook_clip_path é o caminho completo para o clipe do ebook
+        if path_for_ebook_in_filelist and os.path.exists(temp_ebook_clip_path):
+            input_files_for_final_concat.append(temp_ebook_clip_path)
+        elif path_for_ebook_in_filelist: # Foi marcado como gerado, mas não existe
+            print(f"  ⚠️ Clipe de ebook '{temp_ebook_clip_filename}' foi marcado como gerado, mas não encontrado em '{temp_ebook_clip_path}'. Será omitido.")
+
+        for input_file in input_files_for_final_concat:
+            cmd_final_concat.extend(["-i", input_file])
+
+        if len(input_files_for_final_concat) == 1:
+            # Apenas o clipe de cenas intermediário, sem ebook.
+            # Re-encoda para garantir CRF e formato de áudio final.
+            cmd_final_concat.extend([
+                "-c:v", "libx264", "-crf", str(crf_value),
+                "-c:a", "aac", "-b:a", "192k",
+                "-pix_fmt", "yuv420p", "-aspect", "9:16",
+                output_edit_filename_quality
+            ])
+        else: # 2 inputs (cenas + ebook)
+            filter_complex_final_str = ""
+            for i_final in range(len(input_files_for_final_concat)):
+                filter_complex_final_str += f"[{i_final}:v:0][{i_final}:a:0]"
+            filter_complex_final_str += f"concat=n={len(input_files_for_final_concat)}:v=1:a=1[outv][outa]"
+            
+            cmd_final_concat.extend([
+                "-filter_complex", filter_complex_final_str,
+                "-map", "[outv]",
+                "-map", "[outa]",
+                "-c:v", "libx264", "-crf", str(crf_value),
+                "-c:a", "aac", "-b:a", "192k",
+                "-pix_fmt", "yuv420p", "-aspect", "9:16",
+                output_edit_filename_quality
+            ])
+
+        final_concat_result = subprocess.run(cmd_final_concat, capture_output=True, text=True)
+        if final_concat_result.returncode == 0:
+            print(f"  ✅ Edição final '{output_edit_filename_quality}' criada com sucesso!")
+        else:
+            print(f"  ⚠️ Erro ao criar edição final '{output_edit_filename_quality}':")
+            # Imprimir o comando pode ser útil para depuração
+            print(f"     Comando: {' '.join(cmd_final_concat)}")
+            print(f"     ffmpeg stdout: {final_concat_result.stdout}")
+            print(f"     ffmpeg stderr: {final_concat_result.stderr}")
 
     # Limpar arquivos temporários
     shutil.rmtree(temp_dir)
@@ -292,7 +531,22 @@ def carregar_configuracao(caminho_arquivo_config="config.json"):
             "enabled": True,
             "video_source_index": 0, # Índice do vídeo na links.txt para analisar (0 para o primeiro)
             "threshold": 27.0
-        }
+        },
+        "output_qualities": [ # Nova seção para qualidades de saída
+            {
+                "name": "low",
+                "crf": 28
+            },
+            {
+                "name": "medium",
+                "crf": 24
+            },
+            {
+                "name": "high",
+                "crf": 20
+            }
+        ],
+        "movie_name": "" # Novo campo para nome personalizado do filme
     }
     if os.path.exists(caminho_arquivo_config):
         try:
@@ -321,6 +575,13 @@ def carregar_configuracao(caminho_arquivo_config="config.json"):
                 # Garante que a subestrutura de detectar_cortes_de_cena_video exista
                 if not isinstance(config_padrao.get("detectar_cortes_de_cena_video"), dict):
                     config_padrao["detectar_cortes_de_cena_video"] = {"enabled": True, "video_source_index": 0, "threshold": 27.0}
+                    
+                # Garante que a subestrutura de output_qualities exista e seja uma lista
+                if not isinstance(config_padrao.get("output_qualities"), list):
+                    config_padrao["output_qualities"] = [{"name": "default", "crf": 23}] # Reseta para padrão se não for lista
+                
+                if "movie_name" not in config_padrao: # Garante que a chave movie_name exista
+                    config_padrao["movie_name"] = ""
 
 
                 print(f"⚙️ Configurações carregadas de '{caminho_arquivo_config}'.")
@@ -447,7 +708,22 @@ def gerar_edit_json_pelas_batidas(
                         scene_entry["scene_cuted"] = chosen_detected_scene["cena_numero"]
                         added_scene_content = True
                     else:
-                        print(f"   ℹ️ Nenhuma cena detectada com duração suficiente para o segmento de áudio {audio_start_str} - {suitable_audio_end_str}. Pulando este segmento.")
+                        print(f"   ℹ️ Nenhuma cena detectada com duração >= ao áudio ({current_audio_duration:.2f}s) para {audio_start_str} - {suitable_audio_end_str}. Usando fallback de cena aleatória.")
+                        if len(detected_scenes_data) >= 3:
+                            # Exclui a primeira e a última para a escolha aleatória
+                            fallback_candidate_pool = detected_scenes_data[1:-1]
+                            chosen_detected_scene = random.choice(fallback_candidate_pool)
+                            scene_entry["scene_cuted"] = chosen_detected_scene["cena_numero"]
+                            added_scene_content = True
+                            print(f"     Fallback: Usando início da cena detectada nº {chosen_detected_scene['cena_numero']} (de {len(fallback_candidate_pool)} internas) com duração do áudio.")
+                        elif detected_scenes_data: # Se 1 ou 2 cenas detectadas, escolhe qualquer uma
+                            chosen_detected_scene = random.choice(detected_scenes_data)
+                            scene_entry["scene_cuted"] = chosen_detected_scene["cena_numero"]
+                            added_scene_content = True
+                            print(f"     Fallback: Usando início da cena detectada nº {chosen_detected_scene['cena_numero']} (de {len(detected_scenes_data)} disponíveis) com duração do áudio.")
+                        else:
+                            # Este caso não deve ser alcançado se detected_scenes_data foi verificado como não vazio antes.
+                            print(f"     Fallback falhou: Nenhuma cena detectada disponível.")
                 
                 elif not use_scenes_from_detection and available_frame_numbers: # Fallback ou modo frame
                     selected_frame_number = random.choice(available_frame_numbers)
@@ -829,7 +1105,7 @@ if __name__ == "__main__":
             try:
                 with open(edit_json_file, "r", encoding='utf-8') as f:
                     conteudo_edit = json.load(f)
-                criar_edite_do_json(conteudo_edit)
+                criar_edite_do_json(conteudo_edit, config) # Passa o dicionário config
             except json.JSONDecodeError as e:
                 print(f"⚠️ Erro ao decodificar '{edit_json_file}': {e}. Não será possível criar o edit.")
             except Exception as e:

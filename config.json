@@ -5,7 +5,7 @@
     "analisar_batidas_do_audio": false,
     "filtrar_batidas_por_amplitude": {
         "enabled": false,
-        "min_amplitude_percentage": 30 
+        "min_amplitude_percentage": 25 
     },
     "generate_edit_from_beats": {
         "enabled": false,
@@ -13,9 +13,16 @@
         "use_scenes": true
     },
     "detectar_cortes_de_cena_video": {
-        "enabled": true,
+        "enabled": false,
         "video_source_index": 0, 
         "threshold": 27.0
     },
-    "criar_edit_final_do_json": false
+    "criar_edit_final_do_json": true,
+    "output_qualities": [
+        {
+            "name": "high",
+            "crf": 20
+        }
+    ],
+    "movie_name": "Metropolis (Anime 2001)"
 }

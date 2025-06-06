@@ -5,267 +5,267 @@
         {
             "audio_start": "00:00:00:05",
             "audio_end": "00:00:00:18",
-            "frame": "25"
+            "scene_cuted": 4
         },
         {
             "audio_start": "00:00:00:18",
             "audio_end": "00:00:01:08",
-            "frame": "90"
+            "scene_cuted": 18
         },
         {
             "audio_start": "00:00:01:08",
             "audio_end": "00:00:02:06",
-            "frame": "30"
+            "scene_cuted": 54
         },
         {
             "audio_start": "00:00:02:06",
             "audio_end": "00:00:02:13",
-            "frame": "54"
+            "scene_cuted": 28
         },
         {
             "audio_start": "00:00:02:13",
             "audio_end": "00:00:03:04",
-            "frame": "39"
+            "scene_cuted": 31
         },
         {
             "audio_start": "00:00:03:04",
             "audio_end": "00:00:03:11",
-            "frame": "79"
+            "scene_cuted": 37
         },
         {
             "audio_start": "00:00:03:11",
             "audio_end": "00:00:03:18",
-            "frame": "24"
+            "scene_cuted": 48
         },
         {
             "audio_start": "00:00:03:18",
             "audio_end": "00:00:04:09",
-            "frame": "43"
+            "scene_cuted": 47
         },
         {
             "audio_start": "00:00:04:09",
             "audio_end": "00:00:04:17",
-            "frame": "65"
+            "scene_cuted": 26
         },
         {
             "audio_start": "00:00:04:17",
             "audio_end": "00:00:04:24",
-            "frame": "17"
+            "scene_cuted": 23
         },
         {
             "audio_start": "00:00:04:24",
             "audio_end": "00:00:06:04",
-            "frame": "41"
+            "scene_cuted": 45
         },
         {
             "audio_start": "00:00:06:04",
             "audio_end": "00:00:06:12",
-            "frame": "14"
+            "scene_cuted": 57
         },
         {
             "audio_start": "00:00:06:12",
             "audio_end": "00:00:06:20",
-            "frame": "71"
+            "scene_cuted": 19
         },
         {
             "audio_start": "00:00:06:20",
             "audio_end": "00:00:07:10",
-            "frame": "10"
+            "scene_cuted": 23
         },
         {
             "audio_start": "00:00:07:10",
             "audio_end": "00:00:07:21",
-            "frame": "34"
+            "scene_cuted": 7
         },
         {
             "audio_start": "00:00:07:21",
             "audio_end": "00:00:08:15",
-            "frame": "75"
+            "scene_cuted": 35
         },
         {
             "audio_start": "00:00:08:15",
             "audio_end": "00:00:09:01",
-            "frame": "10"
+            "scene_cuted": 5
         },
         {
             "audio_start": "00:00:09:01",
             "audio_end": "00:00:09:20",
-            "frame": "89"
+            "scene_cuted": 31
         },
         {
             "audio_start": "00:00:09:20",
             "audio_end": "00:00:10:18",
-            "frame": "3"
+            "scene_cuted": 56
         },
         {
             "audio_start": "00:00:10:18",
             "audio_end": "00:00:11:01",
-            "frame": "60"
+            "scene_cuted": 41
         },
         {
             "audio_start": "00:00:11:01",
             "audio_end": "00:00:11:08",
-            "frame": "88"
+            "scene_cuted": 37
         },
         {
             "audio_start": "00:00:11:08",
             "audio_end": "00:00:11:16",
-            "frame": "42"
+            "scene_cuted": 35
         },
         {
             "audio_start": "00:00:11:16",
             "audio_end": "00:00:11:23",
-            "frame": "26"
+            "scene_cuted": 45
         },
         {
             "audio_start": "00:00:11:23",
             "audio_end": "00:00:12:06",
-            "frame": "83"
+            "scene_cuted": 13
         },
         {
             "audio_start": "00:00:12:06",
             "audio_end": "00:00:13:04",
-            "frame": "81"
+            "scene_cuted": 11
         },
         {
             "audio_start": "00:00:13:04",
             "audio_end": "00:00:13:11",
-            "frame": "65"
+            "scene_cuted": 8
         },
         {
             "audio_start": "00:00:13:11",
             "audio_end": "00:00:13:23",
-            "frame": "10"
+            "scene_cuted": 31
         },
         {
             "audio_start": "00:00:13:23",
             "audio_end": "00:00:14:16",
-            "frame": "23"
+            "scene_cuted": 39
         },
         {
             "audio_start": "00:00:14:16",
             "audio_end": "00:00:15:15",
-            "frame": "32"
+            "scene_cuted": 20
         },
         {
             "audio_start": "00:00:15:15",
             "audio_end": "00:00:15:22",
-            "frame": "8"
+            "scene_cuted": 40
         },
         {
             "audio_start": "00:00:15:22",
             "audio_end": "00:00:16:20",
-            "frame": "39"
+            "scene_cuted": 29
         },
         {
             "audio_start": "00:00:16:20",
             "audio_end": "00:00:17:02",
-            "frame": "18"
+            "scene_cuted": 41
         },
         {
             "audio_start": "00:00:17:02",
             "audio_end": "00:00:18:07",
-            "frame": "39"
+            "scene_cuted": 11
         },
         {
             "audio_start": "00:00:18:07",
             "audio_end": "00:00:18:19",
-            "frame": "24"
+            "scene_cuted": 14
         },
         {
             "audio_start": "00:00:18:19",
             "audio_end": "00:00:19:05",
-            "frame": "54"
+            "scene_cuted": 20
         },
         {
             "audio_start": "00:00:19:05",
             "audio_end": "00:00:19:13",
-            "frame": "67"
+            "scene_cuted": 43
         },
         {
             "audio_start": "00:00:19:13",
             "audio_end": "00:00:35:07",
-            "frame": "44"
+            "scene_cuted": 7
         },
         {
             "audio_start": "00:00:35:07",
             "audio_end": "00:00:53:04",
-            "frame": "20"
+            "scene_cuted": 31
         },
         {
             "audio_start": "00:00:53:04",
             "audio_end": "00:00:54:09",
-            "frame": "46"
+            "scene_cuted": 7
         },
         {
             "audio_start": "00:00:54:09",
             "audio_end": "00:00:54:16",
-            "frame": "8"
+            "scene_cuted": 55
         },
         {
             "audio_start": "00:00:54:16",
             "audio_end": "00:00:54:24",
-            "frame": "50"
+            "scene_cuted": 49
         },
         {
             "audio_start": "00:00:54:24",
             "audio_end": "00:00:55:07",
-            "frame": "19"
+            "scene_cuted": 31
         },
         {
             "audio_start": "00:00:55:07",
             "audio_end": "00:00:55:14",
-            "frame": "29"
+            "scene_cuted": 42
         },
         {
             "audio_start": "00:00:55:14",
             "audio_end": "00:00:55:22",
-            "frame": "59"
+            "scene_cuted": 16
         },
         {
             "audio_start": "00:00:55:22",
             "audio_end": "00:00:57:13",
-            "frame": "62"
+            "scene_cuted": 29
         },
         {
             "audio_start": "00:00:57:13",
             "audio_end": "00:00:58:00",
-            "frame": "52"
+            "scene_cuted": 55
         },
         {
             "audio_start": "00:00:58:00",
             "audio_end": "00:00:58:08",
-            "frame": "40"
+            "scene_cuted": 18
         },
         {
             "audio_start": "00:00:58:08",
             "audio_end": "00:00:59:13",
-            "frame": "14"
+            "scene_cuted": 7
         },
         {
             "audio_start": "00:00:59:13",
             "audio_end": "00:00:59:20",
-            "frame": "58"
+            "scene_cuted": 29
         },
         {
             "audio_start": "00:00:59:20",
             "audio_end": "00:01:00:03",
-            "frame": "87"
+            "scene_cuted": 14
         },
         {
             "audio_start": "00:01:00:03",
             "audio_end": "00:01:00:18",
-            "frame": "23"
+            "scene_cuted": 45
         },
         {
             "audio_start": "00:01:00:18",
             "audio_end": "00:01:01:23",
-            "frame": "47"
+            "scene_cuted": 6
         },
         {
             "audio_start": "00:01:01:23",
             "audio_end": "00:01:02:21",
-            "frame": "16"
+            "scene_cuted": 37
         }
     ]
 }
