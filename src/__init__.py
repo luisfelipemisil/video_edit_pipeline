@@ -1,0 +1,1 @@
+# Este arquivo faz do diretório 'src' um pacote Python.

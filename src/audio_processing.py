@@ -4,9 +4,7 @@ import subprocess
 import time
 import shutil
 
-from utils import format_seconds_to_hhmmssff, resolver_nome_arquivo_yt_dlp
-
-# Funções movidas de main.py
+from .utils import format_seconds_to_hhmmssff
 
 def baixar_audio_youtube(url, path_destino_param="."):
     """
@@ -19,6 +17,7 @@ def baixar_audio_youtube(url, path_destino_param="."):
     Returns:
         tuple: (caminho_do_arquivo_mp3, ja_existia_antes_flag) ou (None, False) em caso de erro.
     """
+    # Esta função será movida para src/downloading.py
     try:
         print(f"Baixando áudio de: {url}")
         
@@ -72,7 +71,7 @@ def baixar_audio_youtube(url, path_destino_param="."):
         print(f"   Saída (stdout):\n{download_process.stdout}")
         print(f"   Saída (stderr):\n{download_process.stderr}")
         return None, False
-
+    # except subprocess.CalledProcessError as e: # Este bloco é para resolver_nome_arquivo_yt_dlp
     except subprocess.CalledProcessError as e:
         print(f"⚠️ Erro ao tentar obter o nome do arquivo de áudio com yt-dlp para {url}: {e}")
         return None, False

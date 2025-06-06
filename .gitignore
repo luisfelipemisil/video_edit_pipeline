@@ -1,9 +1,22 @@
 # Pasta de vídeos baixados e seus frames
 videos_baixados/
+
+# Pasta de músicas baixadas e seus arquivos de análise
 songs/
 
 # Arquivos de ambiente virtual (comum em projetos Python)
 venv/
 __pycache__/
+*.py[cod]
+
 # Arquivo de variáveis de ambiente
 .env
+
+# Arquivos de configuração gerados
+config/edit.json
+
+# Vídeos finais gerados na raiz do projeto
+edit_final_*.mp4
+
+# Arquivos específicos do sistema operacional
+.DS_Store

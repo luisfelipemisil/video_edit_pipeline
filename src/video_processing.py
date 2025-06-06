@@ -6,7 +6,7 @@ import cv2
 import shutil
 import json # Adicionado import json
 
-from utils import format_seconds_to_hhmmssff, resolver_nome_arquivo_yt_dlp
+from .utils import format_seconds_to_hhmmssff, resolver_nome_arquivo_yt_dlp
 
 # Imports para detecção de cena
 from scenedetect import open_video, SceneManager
@@ -22,6 +22,7 @@ def baixar_video(url, path_destino_param="."):
     Returns:
         tuple: (caminho_do_arquivo_baixado, ja_existia_antes_flag) ou (None, False) em caso de erro.
     """
+    # Esta função será movida para src/downloading.py
     try:
         print(f"Baixando: {url}")
 
