@@ -46,19 +46,19 @@ except Exception as e:
 
 # Exemplo de uso
 if __name__ == "__main__":
-    edit_json_file = os.path.join(BASE_DIR, "config", "edit.json")
-    config_geral_file = os.path.join(BASE_DIR, "config", "config.json")
+    edit_json_file = os.path.join(BASE_DIR, "src", "config", "edit.json")        # Ajustado
+    config_geral_file = os.path.join(BASE_DIR, "src", "config", "config.json")  # Ajustado
 
     # Carrega as configurações gerais
     config = carregar_configuracao(config_geral_file)
     print(f"Configurações de execução: {config}")
 
-    arquivo_links = os.path.join(BASE_DIR, "data", "links.txt")
+    arquivo_links = os.path.join(BASE_DIR, "src", "data", "links.txt")          # Ajustado
     pasta_destino_videos = os.path.join(BASE_DIR, "videos_baixados")
     intervalo_para_frames_seg = 1 # Extrair um frame a cada X segundos
     qualidade_dos_frames_jpeg = 75 # Qualidade JPEG (0-100), menor valor = menor tamanho/qualidade
     songs_directory = os.path.join(BASE_DIR, "songs")
-    musica_config_file = os.path.join(BASE_DIR, "data", "musica.txt")
+    musica_config_file = os.path.join(BASE_DIR, "src", "data", "musica.txt")    # Ajustado
 
     caminho_do_arquivo_de_musica = None
     youtube_url_musica = None
@@ -137,13 +137,25 @@ if __name__ == "__main__":
             audio_para_analise_encontrado = None
             # Tenta encontrar um arquivo de áudio na pasta 'songs'
             if os.path.exists(songs_directory) and os.path.isdir(songs_directory):
+                audio_files = []
                 audio_extensions = ('.mp3', '.wav', '.aac', '.m4a', '.ogg', '.flac')
-                for f_name in sorted(os.listdir(songs_directory)): # sorted para consistência
+                for f_name in os.listdir(songs_directory):
                     if os.path.isfile(os.path.join(songs_directory, f_name)) and f_name.lower().endswith(audio_extensions):
-                        audio_para_analise_encontrado = os.path.join(songs_directory, f_name)
-                        print(f"\n🎵 Áudio encontrado para análise de batidas: {audio_para_analise_encontrado}")
-                        break
-
+                        audio_files.append(os.path.join(songs_directory, f_name))
+                
+                if audio_files:
+                    # Ordena os arquivos de áudio pelo tempo de modificação (mais recente primeiro)
+                    try:
+                        latest_audio_file = max(audio_files, key=os.path.getmtime)
+                        audio_para_analise_encontrado = latest_audio_file
+                        print(f"\n🎵 Áudio mais recente encontrado para análise de batidas: {audio_para_analise_encontrado}")
+                    except Exception as e:
+                        print(f"⚠️ Erro ao determinar o áudio mais recente: {e}. Usando o primeiro encontrado alfabeticamente.")
+                        # Fallback para o primeiro arquivo em ordem alfabética se houver erro
+                        audio_para_analise_encontrado = sorted(audio_files)[0] if audio_files else None
+                        if audio_para_analise_encontrado:
+                             print(f"\n🎵 Áudio (fallback) encontrado para análise de batidas: {audio_para_analise_encontrado}")
+                
             if audio_para_analise_encontrado:
                 fps_referencia_batidas = 25
                 pasta_batidas_analisadas = os.path.join(songs_directory, "analise_batidas")
@@ -308,53 +320,88 @@ if __name__ == "__main__":
         nome_video_para_json = None
 
         # A. Determinar arquivo de batidas (.txt) a partir de 'songs/analise_batidas'
-        pasta_batidas_dir = os.path.join(songs_directory, "analise_batidas")
+        pasta_batidas_dir = os.path.join(songs_directory, "analise_batidas") # Corrigido para usar songs_directory
         # Agora buscamos especificamente por beats.txt, que é o arquivo potencialmente filtrado
-        caminho_beats_txt_esperado = os.path.join(pasta_batidas_dir, "beats.txt")
-        if os.path.exists(caminho_beats_txt_esperado):
-             caminho_batidas_a_usar = caminho_beats_txt_esperado
-             print(f"   🎶 Usando arquivo de batidas: {caminho_batidas_a_usar}")
+        if os.path.exists(pasta_batidas_dir):
+            caminho_beats_txt_esperado = os.path.join(pasta_batidas_dir, "beats.txt")
+            if os.path.exists(caminho_beats_txt_esperado):
+                 caminho_batidas_a_usar = caminho_beats_txt_esperado
+                 print(f"   🎶 Usando arquivo de batidas: {caminho_batidas_a_usar}")
+            else:
+                print(f"   ⚠️ Arquivo de batidas '{caminho_beats_txt_esperado}' não encontrado.")
         else:
-            print(f"   ⚠️ Arquivo de batidas '{caminho_beats_txt_esperado}' não encontrado.")
+            print(f"   ⚠️ Pasta de análise de batidas '{pasta_batidas_dir}' não encontrada.")
 
 
         # B. Determinar nome do áudio para JSON a partir da pasta 'songs'
         if os.path.exists(songs_directory) and os.path.isdir(songs_directory):
             audio_extensions = ('.mp3', '.wav', '.aac', '.m4a', '.ogg', '.flac')
-            for f_name in sorted(os.listdir(songs_directory)):
+            song_files = []
+            for f_name in os.listdir(songs_directory):
                 if os.path.isfile(os.path.join(songs_directory, f_name)) and f_name.lower().endswith(audio_extensions):
-                    nome_audio_para_json = f_name
-                    print(f"   🎵 Usando primeiro arquivo de áudio encontrado em '{songs_directory}': {nome_audio_para_json}")
-                    break
+                    song_files.append(f_name)
+            
+            if song_files:
+                try:
+                    # Ordena os arquivos de áudio pelo tempo de modificação (mais recente primeiro)
+                    latest_song_file_name = max(song_files, key=lambda f: os.path.getmtime(os.path.join(songs_directory, f)))
+                    nome_audio_para_json = latest_song_file_name
+                    print(f"   🎵 Usando arquivo de áudio mais recente em '{songs_directory}': {nome_audio_para_json}")
+                except Exception as e:
+                    print(f"   ⚠️ Erro ao determinar o áudio mais recente para JSON: {e}. Usando o primeiro encontrado alfabeticamente.")
+                    nome_audio_para_json = sorted(song_files)[0] if song_files else None
+                    if nome_audio_para_json:
+                        print(f"   🎵 Usando arquivo de áudio (fallback) em '{songs_directory}': {nome_audio_para_json}")
+
         if not nome_audio_para_json:
             print(f"   ⚠️ Nenhum arquivo de áudio ({', '.join(audio_extensions)}) encontrado em '{songs_directory}'.")
 
-        # C. Determinar pasta de frames do vídeo a partir de 'videos_baixados'
+        # C. Determinar nome_video_para_json (vídeo mais recente em videos_baixados)
         if os.path.exists(pasta_destino_videos) and os.path.isdir(pasta_destino_videos):
-            for entry_name in sorted(os.listdir(pasta_destino_videos)):
-                potential_frames_dir = os.path.join(pasta_destino_videos, entry_name)
-                if os.path.isdir(potential_frames_dir) and entry_name.lower().endswith("_frames"):
-                    # Verificar se a pasta contém arquivos .jpg
-                    if any(f.lower().endswith(".jpg") for f in os.listdir(potential_frames_dir) if os.path.isfile(os.path.join(potential_frames_dir, f))):
-                        pasta_frames_a_usar = potential_frames_dir
-                        print(f"   🖼️ Usando primeira pasta de frames (com .jpg e terminada em '_frames') encontrada: {pasta_frames_a_usar}")
-                        break
-        if not pasta_frames_a_usar:
-            print(f"   ⚠️ Nenhuma pasta de frames (terminada em '_frames' e contendo .jpg) encontrada em '{pasta_destino_videos}'.")
-
-        # D. Determinar nome do vídeo para JSON a partir de 'videos_baixados'
-        if os.path.exists(pasta_destino_videos) and os.path.isdir(pasta_destino_videos):
+            video_files_in_dest = []
             video_extensions = ('.mp4', '.webm', '.mkv', '.avi', '.mov')
-            for f_name in sorted(os.listdir(pasta_destino_videos)):
+            for f_name in os.listdir(pasta_destino_videos):
                 if os.path.isfile(os.path.join(pasta_destino_videos, f_name)) and f_name.lower().endswith(video_extensions):
-                    nome_video_para_json = f_name
-                    print(f"   🎞️ Usando primeiro arquivo de vídeo encontrado em '{pasta_destino_videos}': {nome_video_para_json}")
-                    break
+                    video_files_in_dest.append(os.path.join(pasta_destino_videos, f_name))
+            
+            if video_files_in_dest:
+                try:
+                    latest_video_file_path = max(video_files_in_dest, key=os.path.getmtime)
+                    nome_video_para_json = os.path.basename(latest_video_file_path)
+                    print(f"   🎞️ Usando vídeo baixado mais recente para JSON: {nome_video_para_json}")
+                except Exception as e:
+                    print(f"   ⚠️ Erro ao determinar o vídeo mais recente para JSON: {e}. Usando o primeiro encontrado alfabeticamente.")
+                    if video_files_in_dest:
+                        nome_video_para_json = os.path.basename(sorted(video_files_in_dest)[0])
+                        print(f"   🎞️ Usando vídeo baixado (fallback) para JSON: {nome_video_para_json}")
+        
         if not nome_video_para_json:
-            print(f"   ⚠️ Nenhum arquivo de vídeo ({', '.join(video_extensions)}) encontrado em '{pasta_destino_videos}'.")
+             print(f"   ⚠️ Nenhum arquivo de vídeo encontrado em '{pasta_destino_videos}' para usar no JSON.")
+
+        # D. Determinar pasta_frames_a_usar SE generate_edit_config["use_scenes"] for False
+        if nome_video_para_json and not generate_edit_config.get("use_scenes"):
+            frames_dir_for_video = os.path.join(pasta_destino_videos, os.path.splitext(nome_video_para_json)[0] + "_frames")
+            if os.path.exists(frames_dir_for_video) and os.path.isdir(frames_dir_for_video):
+                if any(f.lower().endswith(".jpg") for f in os.listdir(frames_dir_for_video) if os.path.isfile(os.path.join(frames_dir_for_video, f))):
+                    pasta_frames_a_usar = frames_dir_for_video
+                    print(f"   🖼️ Usando pasta de frames '{pasta_frames_a_usar}' para o vídeo '{nome_video_para_json}'.")
+                else:
+                    print(f"   ⚠️ Pasta de frames '{frames_dir_for_video}' encontrada, mas está vazia ou não contém arquivos .jpg.")
+            else:
+                print(f"   ⚠️ Pasta de frames '{frames_dir_for_video}' não encontrada para o vídeo '{nome_video_para_json}'. A extração de frames pode estar desabilitada ou falhou.")
+        elif generate_edit_config.get("use_scenes"):
+            print(f"   ℹ️ Usando cenas detectadas. Pasta de frames não é estritamente necessária para gerar edit.json.")
+            # pasta_frames_a_usar permanece None, o que é ok para gerar_edit_json_pelas_batidas se use_scenes=True
 
         # E. Gerar JSON se todos os componentes foram encontrados/determinados
-        if caminho_batidas_a_usar and pasta_frames_a_usar and nome_video_para_json and nome_audio_para_json:
+        can_generate_edit_json = (
+            caminho_batidas_a_usar and
+            nome_video_para_json and
+            nome_audio_para_json and
+            (pasta_frames_a_usar if not generate_edit_config.get("use_scenes") else True) # pasta_frames é opcional se use_scenes=True
+        )
+
+        if can_generate_edit_json:
             # Check if the beats file is empty after potential filtering
             try:
                 with open(caminho_batidas_a_usar, 'r', encoding='utf-8') as f:
@@ -367,7 +414,7 @@ if __name__ == "__main__":
                  caminho_batidas_a_usar = None # Marca como não utilizável
 
 
-        if caminho_batidas_a_usar and pasta_frames_a_usar and nome_video_para_json and nome_audio_para_json:
+        if can_generate_edit_json and caminho_batidas_a_usar: # Re-check caminho_batidas_a_usar
              gerar_edit_json_pelas_batidas(
                  caminho_batidas_a_usar,
                  pasta_frames_a_usar,
@@ -380,8 +427,9 @@ if __name__ == "__main__":
         else:
             print("⚠️ Não foi possível gerar 'edit.json' a partir das batidas: um ou mais arquivos/pastas necessários não foram encontrados ou determinados.")
             if not caminho_batidas_a_usar: print("      - Arquivo de batidas não determinado/encontrado ou vazio.") # Updated message
-            if not pasta_frames_a_usar: print("      - Pasta de frames não determinada/encontrada ou vazia.")
-            if not nome_video_para_json: print("      - Nome do vídeo para JSON não determinado.") # Updated message
+            if not pasta_frames_a_usar and not generate_edit_config.get("use_scenes"):
+                print("      - Pasta de frames não determinada/encontrada (necessária se não usar cenas detectadas).")
+            if not nome_video_para_json: print("      - Nome do vídeo para JSON não determinado.")
             if not nome_audio_para_json: print("      - Nome do áudio para JSON não determinado.")
     else:
         print("\nℹ️ Geração de 'edit.json' a partir das batidas desabilitada nas configurações.")

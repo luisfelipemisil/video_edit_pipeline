@@ -140,9 +140,15 @@ def criar_edite_do_json(edit_data, config, base_dir):
         video_scene_process_result = subprocess.run(cmd_video_scene, capture_output=True, text=True)
         if video_scene_process_result.returncode != 0:
             print(f"⚠️ Erro ao criar clipe da cena {i+1}:\n   {video_scene_process_result.stderr}")
+            # Adiciona um print do comando para depuração
+            print(f"   Comando falho: {' '.join(cmd_video_scene)}")
             continue
-        scene_clip_paths.append(temp_video_clip_path)
-        total_main_clips_duration_sec += audio_duration_sec
+        
+        if os.path.exists(temp_video_clip_path) and os.path.getsize(temp_video_clip_path) > 1024: # Verifica se o arquivo existe e tem mais de 1KB
+            scene_clip_paths.append(temp_video_clip_path)
+            total_main_clips_duration_sec += audio_duration_sec
+        else:
+            print(f"⚠️ Clipe da cena {i+1} ('{temp_video_clip_path}') não foi gerado corretamente ou está vazio. Pulando.")
 
     print(flush=True)
     if not scene_clip_paths:

@@ -1,271 +1,121 @@
 {
-    "source_video": "Metropolis Trailer HD (Anime 2001).webm",
-    "source_audio": "Song For Denise  TikTok edit version.mp3",
+    "source_video": "「残酷な天使のテーゼ」MUSIC VIDEO（HDver.）⧸Zankoku na Tenshi no Te-ze“The Cruel Angel's Thesis”.webm",
+    "source_audio": "God Frequency.mp3",
     "scenes": [
         {
-            "audio_start": "00:00:00:05",
-            "audio_end": "00:00:00:18",
-            "scene_cuted": 48
-        },
-        {
-            "audio_start": "00:00:00:18",
-            "audio_end": "00:00:01:08",
-            "scene_cuted": 56
-        },
-        {
-            "audio_start": "00:00:01:08",
-            "audio_end": "00:00:02:06",
-            "scene_cuted": 52
-        },
-        {
-            "audio_start": "00:00:02:06",
-            "audio_end": "00:00:02:13",
-            "scene_cuted": 53
-        },
-        {
-            "audio_start": "00:00:02:13",
-            "audio_end": "00:00:03:04",
-            "scene_cuted": 37
-        },
-        {
-            "audio_start": "00:00:03:04",
-            "audio_end": "00:00:03:11",
-            "scene_cuted": 4
-        },
-        {
-            "audio_start": "00:00:03:11",
-            "audio_end": "00:00:03:18",
-            "scene_cuted": 30
-        },
-        {
-            "audio_start": "00:00:03:18",
-            "audio_end": "00:00:04:09",
-            "scene_cuted": 24
-        },
-        {
-            "audio_start": "00:00:04:09",
-            "audio_end": "00:00:04:17",
-            "scene_cuted": 52
-        },
-        {
-            "audio_start": "00:00:04:17",
-            "audio_end": "00:00:04:24",
-            "scene_cuted": 7
-        },
-        {
-            "audio_start": "00:00:04:24",
-            "audio_end": "00:00:06:04",
-            "scene_cuted": 57
-        },
-        {
-            "audio_start": "00:00:06:04",
-            "audio_end": "00:00:06:12",
-            "scene_cuted": 28
-        },
-        {
-            "audio_start": "00:00:06:12",
-            "audio_end": "00:00:06:20",
-            "scene_cuted": 16
-        },
-        {
-            "audio_start": "00:00:06:20",
-            "audio_end": "00:00:07:10",
-            "scene_cuted": 52
-        },
-        {
-            "audio_start": "00:00:07:10",
-            "audio_end": "00:00:07:21",
-            "scene_cuted": 53
-        },
-        {
-            "audio_start": "00:00:07:21",
-            "audio_end": "00:00:08:15",
-            "scene_cuted": 9
-        },
-        {
-            "audio_start": "00:00:08:15",
-            "audio_end": "00:00:09:01",
-            "scene_cuted": 39
-        },
-        {
-            "audio_start": "00:00:09:01",
-            "audio_end": "00:00:09:20",
-            "scene_cuted": 8
-        },
-        {
-            "audio_start": "00:00:09:20",
-            "audio_end": "00:00:10:18",
-            "scene_cuted": 6
-        },
-        {
-            "audio_start": "00:00:10:18",
-            "audio_end": "00:00:11:01",
-            "scene_cuted": 39
-        },
-        {
-            "audio_start": "00:00:11:01",
-            "audio_end": "00:00:11:08",
-            "scene_cuted": 52
-        },
-        {
-            "audio_start": "00:00:11:08",
-            "audio_end": "00:00:11:16",
-            "scene_cuted": 18
-        },
-        {
-            "audio_start": "00:00:11:16",
-            "audio_end": "00:00:11:23",
-            "scene_cuted": 1
-        },
-        {
-            "audio_start": "00:00:11:23",
-            "audio_end": "00:00:12:06",
-            "scene_cuted": 8
-        },
-        {
-            "audio_start": "00:00:12:06",
-            "audio_end": "00:00:13:04",
-            "scene_cuted": 11
-        },
-        {
-            "audio_start": "00:00:13:04",
-            "audio_end": "00:00:13:11",
-            "scene_cuted": 10
-        },
-        {
-            "audio_start": "00:00:13:11",
-            "audio_end": "00:00:13:23",
-            "scene_cuted": 41
-        },
-        {
-            "audio_start": "00:00:13:23",
-            "audio_end": "00:00:14:16",
-            "scene_cuted": 25
-        },
-        {
-            "audio_start": "00:00:14:16",
-            "audio_end": "00:00:15:15",
-            "scene_cuted": 6
-        },
-        {
-            "audio_start": "00:00:15:15",
-            "audio_end": "00:00:15:22",
-            "scene_cuted": 33
-        },
-        {
-            "audio_start": "00:00:15:22",
-            "audio_end": "00:00:16:20",
-            "scene_cuted": 54
-        },
-        {
-            "audio_start": "00:00:16:20",
-            "audio_end": "00:00:17:02",
-            "scene_cuted": 39
-        },
-        {
-            "audio_start": "00:00:17:02",
-            "audio_end": "00:00:18:07",
-            "scene_cuted": 4
-        },
-        {
-            "audio_start": "00:00:18:07",
-            "audio_end": "00:00:18:19",
-            "scene_cuted": 30
-        },
-        {
-            "audio_start": "00:00:18:19",
-            "audio_end": "00:00:19:05",
-            "scene_cuted": 22
-        },
-        {
-            "audio_start": "00:00:19:05",
-            "audio_end": "00:00:19:13",
-            "scene_cuted": 31
-        },
-        {
-            "audio_start": "00:00:19:13",
-            "audio_end": "00:00:35:07",
-            "scene_cuted": 5
-        },
-        {
-            "audio_start": "00:00:35:07",
-            "audio_end": "00:00:53:04",
-            "scene_cuted": 39
-        },
-        {
-            "audio_start": "00:00:53:04",
-            "audio_end": "00:00:54:09",
-            "scene_cuted": 43
-        },
-        {
-            "audio_start": "00:00:54:09",
-            "audio_end": "00:00:54:16",
-            "scene_cuted": 21
-        },
-        {
-            "audio_start": "00:00:54:16",
-            "audio_end": "00:00:54:24",
-            "scene_cuted": 6
-        },
-        {
-            "audio_start": "00:00:54:24",
-            "audio_end": "00:00:55:07",
-            "scene_cuted": 18
-        },
-        {
-            "audio_start": "00:00:55:07",
-            "audio_end": "00:00:55:14",
-            "scene_cuted": 32
-        },
-        {
-            "audio_start": "00:00:55:14",
-            "audio_end": "00:00:55:22",
-            "scene_cuted": 40
-        },
-        {
-            "audio_start": "00:00:55:22",
-            "audio_end": "00:00:57:13",
-            "scene_cuted": 1
-        },
-        {
-            "audio_start": "00:00:57:13",
-            "audio_end": "00:00:58:00",
+            "audio_start": "00:00:02:21",
+            "audio_end": "00:00:03:23",
             "scene_cuted": 26
         },
         {
-            "audio_start": "00:00:58:00",
-            "audio_end": "00:00:58:08",
-            "scene_cuted": 43
+            "audio_start": "00:00:03:23",
+            "audio_end": "00:00:09:14",
+            "scene_cuted": 74
         },
         {
-            "audio_start": "00:00:58:08",
-            "audio_end": "00:00:59:13",
-            "scene_cuted": 32
+            "audio_start": "00:00:09:14",
+            "audio_end": "00:00:15:05",
+            "scene_cuted": 100
         },
         {
-            "audio_start": "00:00:59:13",
-            "audio_end": "00:00:59:20",
-            "scene_cuted": 33
+            "audio_start": "00:00:15:05",
+            "audio_end": "00:00:24:18",
+            "scene_cuted": 49
         },
         {
-            "audio_start": "00:00:59:20",
-            "audio_end": "00:01:00:03",
-            "scene_cuted": 25
+            "audio_start": "00:00:24:18",
+            "audio_end": "00:00:25:11",
+            "scene_cuted": 86
         },
         {
-            "audio_start": "00:01:00:03",
-            "audio_end": "00:01:00:18",
-            "scene_cuted": 18
+            "audio_start": "00:00:25:11",
+            "audio_end": "00:00:28:06",
+            "scene_cuted": 58
         },
         {
-            "audio_start": "00:01:00:18",
-            "audio_end": "00:01:01:23",
-            "scene_cuted": 10
+            "audio_start": "00:00:28:06",
+            "audio_end": "00:00:30:19",
+            "scene_cuted": 129
         },
         {
-            "audio_start": "00:01:01:23",
-            "audio_end": "00:01:02:21",
+            "audio_start": "00:00:30:19",
+            "audio_end": "00:00:33:23",
+            "scene_cuted": 74
+        },
+        {
+            "audio_start": "00:00:33:23",
+            "audio_end": "00:00:36:10",
+            "scene_cuted": 126
+        },
+        {
+            "audio_start": "00:00:36:10",
+            "audio_end": "00:00:39:14",
+            "scene_cuted": 56
+        },
+        {
+            "audio_start": "00:00:39:14",
+            "audio_end": "00:00:42:01",
+            "scene_cuted": 56
+        },
+        {
+            "audio_start": "00:00:42:01",
+            "audio_end": "00:00:45:05",
+            "scene_cuted": 142
+        },
+        {
+            "audio_start": "00:00:45:05",
+            "audio_end": "00:00:47:17",
+            "scene_cuted": 107
+        },
+        {
+            "audio_start": "00:00:47:17",
+            "audio_end": "00:01:10:07",
             "scene_cuted": 52
+        },
+        {
+            "audio_start": "00:01:10:07",
+            "audio_end": "00:01:13:11",
+            "scene_cuted": 70
+        },
+        {
+            "audio_start": "00:01:13:11",
+            "audio_end": "00:01:15:23",
+            "scene_cuted": 70
+        },
+        {
+            "audio_start": "00:01:15:23",
+            "audio_end": "00:01:19:02",
+            "scene_cuted": 49
+        },
+        {
+            "audio_start": "00:01:19:02",
+            "audio_end": "00:01:21:14",
+            "scene_cuted": 56
+        },
+        {
+            "audio_start": "00:01:21:14",
+            "audio_end": "00:01:24:18",
+            "scene_cuted": 94
+        },
+        {
+            "audio_start": "00:01:24:18",
+            "audio_end": "00:01:27:14",
+            "scene_cuted": 74
+        },
+        {
+            "audio_start": "00:01:27:14",
+            "audio_end": "00:01:30:09",
+            "scene_cuted": 78
+        },
+        {
+            "audio_start": "00:01:30:09",
+            "audio_end": "00:01:31:20",
+            "scene_cuted": 86
+        },
+        {
+            "audio_start": "00:01:31:20",
+            "audio_end": "00:01:32:13",
+            "scene_cuted": 124
         }
     ]
 }
