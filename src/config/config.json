@@ -2,18 +2,18 @@
     "baixar_videos_da_lista": false,
     "extrair_frames_dos_videos": false,
     "baixar_audio_da_musica": false,
-    "analisar_batidas_do_audio": false,
+    "analisar_batidas_do_audio": true,
     "filtrar_batidas_por_amplitude": {
-        "enabled": false,
+        "enabled": true,
         "min_amplitude_percentage": 25
     },
     "generate_edit_from_beats": {
-        "enabled": false,
+        "enabled": true,
         "min_scene_duration_seconds": 0.5,
         "use_scenes": true
     },
     "detectar_cortes_de_cena_video": {
-        "enabled": false,
+        "enabled": true,
         "video_source_index": 0,
         "threshold": 27.0
     },
@@ -24,5 +24,6 @@
             "crf": 20
         }
     ],
-    "movie_name": "Neon Genesis Evangelion\n -\n 1996"
+    "movie_name": "Cowboy Bebop\n - 1998",
+    "max_music_duration_seconds": 120.0
 }

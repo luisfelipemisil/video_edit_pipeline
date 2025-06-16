@@ -20,6 +20,7 @@ DEFAULT_CONFIG = {
     "baixar_videos_da_lista": True,
     "extrair_frames_dos_videos": True,
     "baixar_audio_da_musica": True,
+    "max_music_duration_seconds": 0.0, # 0.0 significa sem limite
     "analisar_batidas_do_audio": True,
     "filtrar_batidas_por_amplitude": {"enabled": True, "min_amplitude_percentage": 75},
     "criar_edit_final_do_json": False,
@@ -33,7 +34,7 @@ class PipelineGUI:
     def __init__(self, master):
         self.master = master
         master.title("Pipeline de Edição de Vídeo")
-        master.geometry("800x700")
+        master.geometry("800x750") # Aumentado para acomodar mais configs
 
         self.config_vars = {}
         self.config_data = {}
@@ -44,20 +45,11 @@ class PipelineGUI:
         main_frame = ttk.Frame(master, padding="10")
         main_frame.pack(fill=tk.BOTH, expand=True)
 
-        # Notebook para abas de configuração
-        notebook = ttk.Notebook(main_frame)
-        notebook.pack(fill=tk.X, pady=5)
-
         # --- Frame de Configurações ---
-        general_config_tab = ttk.Frame(notebook, padding="10")
-        notebook.add(general_config_tab, text="Opções Principais")
-        self.populate_general_config_tab(general_config_tab)
-
-        # --- Frame de Configurações Detalhadas ---
-        detailed_config_tab = ttk.Frame(notebook, padding="10")
-        notebook.add(detailed_config_tab, text="Ajustes Finos")
-        self.populate_detailed_config_tab(detailed_config_tab)
-
+        # Unificado: todas as configurações em um único frame
+        config_frame = ttk.LabelFrame(main_frame, text="Configurações da Pipeline", padding="10")
+        config_frame.pack(fill=tk.X, pady=5)
+        self.populate_config_widgets(config_frame)
 
 
         # --- Frame de Entradas ---
@@ -90,56 +82,87 @@ class PipelineGUI:
         self.log_queue = queue.Queue()
         self.master.after(100, self.process_log_queue)
 
-    def populate_general_config_tab(self, parent_tab):
-        # Chaves a serem exibidas como checkboxes
-        # (Chave no JSON, Texto do Label na GUI)
-        checkbox_keys = [
-            ("baixar_videos_da_lista", "Baixar Vídeos da Lista"), # Mantido para exemplo, pode ser movido
+    def populate_config_widgets(self, parent_frame):
+        current_row = 0
+        col = 0
+        max_cols = 2 # Número de colunas para checkboxes
+
+        # Checkboxes principais - Parte 1
+        checkbox_keys_part1 = [
+            ("baixar_videos_da_lista", "Baixar Vídeos da Lista"),
             ("extrair_frames_dos_videos", "Extrair Frames dos Vídeos"),
             ("baixar_audio_da_musica", "Baixar Áudio da Música"),
+        ]
+
+        for key_path, label_text in checkbox_keys_part1:
+            var = tk.BooleanVar()
+            cb = ttk.Checkbutton(parent_frame, text=label_text, variable=var)
+            cb.grid(row=current_row, column=col, sticky=tk.W, padx=5, pady=2)
+            self.config_vars[key_path] = var
+            col += 1
+            if col >= max_cols:
+                col = 0
+                current_row += 1
+        
+        if col != 0: # Se a última linha de checkboxes não foi preenchida, avança para a próxima linha
+            current_row +=1
+            col = 0
+
+        # --- Novo Campo: Tempo Máximo da Música ---
+        ttk.Label(parent_frame, text="Tempo Máximo Música (s) (0=sem limite):").grid(row=current_row, column=0, sticky=tk.W, padx=5, pady=2)
+        max_music_dur_var = tk.StringVar()
+        max_music_dur_spinbox = ttk.Spinbox(parent_frame, from_=0.0, to=999.0, increment=1.0, format="%.1f", textvariable=max_music_dur_var, width=7)
+        max_music_dur_spinbox.grid(row=current_row, column=1, sticky=tk.W, padx=5, pady=2)
+        self.string_vars["max_music_duration_seconds"] = max_music_dur_var
+        current_row += 1
+        # col = 0 # Já resetado ou será resetado para a próxima seção de checkboxes
+
+        # Checkboxes principais - Parte 2 (após o novo campo)
+        checkbox_keys_part2 = [
             ("analisar_batidas_do_audio", "Analisar Batidas do Áudio"),
             ("filtrar_batidas_por_amplitude.enabled", "Filtrar Batidas por Amplitude"),
             ("detectar_cortes_de_cena_video.enabled", "Detectar Cortes de Cena"),
             ("generate_edit_from_beats.enabled", "Gerar edit.json pelas Batidas"),
             ("criar_edit_final_do_json", "Criar Edit Final do JSON"),
         ]
-
-        row = 0
-        col = 0
-        for key_path, label_text in checkbox_keys:
+        
+        # Reinicia 'col' para o layout dos próximos checkboxes
+        col = 0 
+        for key_path, label_text in checkbox_keys_part2:
             var = tk.BooleanVar()
-            cb = ttk.Checkbutton(parent_tab, text=label_text, variable=var)
-            cb.grid(row=row, column=col, sticky=tk.W, padx=5, pady=2)
+            cb = ttk.Checkbutton(parent_frame, text=label_text, variable=var)
+            cb.grid(row=current_row, column=col, sticky=tk.W, padx=5, pady=2)
             self.config_vars[key_path] = var
             col += 1
-            if col >= 2:
+            if col >= max_cols:
                 col = 0
-                row += 1
+                current_row += 1
+        
+        if col != 0: # Se a última linha não foi preenchida
+            current_row +=1
 
-    def populate_detailed_config_tab(self, parent_tab):
-        current_row = 0
+        # --- Conteúdo da antiga populate_detailed_config_tab ---
+        # Os LabelFrames agora serão filhos diretos de parent_frame
 
         # --- Filtrar Batidas por Amplitude ---
-        filter_beats_frame = ttk.LabelFrame(parent_tab, text="Filtro de Batidas", padding="5")
-        filter_beats_frame.grid(row=current_row, column=0, padx=5, pady=5, sticky=tk.EW)
-        current_row += 1
+        filter_beats_frame = ttk.LabelFrame(parent_frame, text="Ajustes: Filtro de Batidas", padding="5")
+        filter_beats_frame.grid(row=current_row, column=0, columnspan=max_cols, padx=5, pady=5, sticky=tk.EW)
 
         ttk.Label(filter_beats_frame, text="Min. Amplitude (%):").grid(row=0, column=0, sticky=tk.W, padx=5, pady=2)
         amp_var = tk.StringVar()
         amp_spinbox = ttk.Spinbox(filter_beats_frame, from_=0, to=100, increment=1, textvariable=amp_var, width=5)
         amp_spinbox.grid(row=0, column=1, sticky=tk.W, padx=5, pady=2)
         self.string_vars["filtrar_batidas_por_amplitude.min_amplitude_percentage"] = amp_var
+        current_row += 1
 
         # --- Gerar edit.json pelas Batidas ---
-        gen_edit_frame = ttk.LabelFrame(parent_tab, text="Geração Automática de Edit.json", padding="5")
-        gen_edit_frame.grid(row=current_row, column=0, padx=5, pady=5, sticky=tk.EW)
-        current_row += 1
+        gen_edit_frame = ttk.LabelFrame(parent_frame, text="Ajustes: Geração Automática de Edit.json", padding="5")
+        gen_edit_frame.grid(row=current_row, column=0, columnspan=max_cols, padx=5, pady=5, sticky=tk.EW)
 
         use_scenes_var = tk.BooleanVar()
         use_scenes_cb = ttk.Checkbutton(gen_edit_frame, text="Usar Cenas Detectadas (em vez de frames)", variable=use_scenes_var)
         use_scenes_cb.grid(row=0, column=0, columnspan=2, sticky=tk.W, padx=5, pady=2)
         self.config_vars["generate_edit_from_beats.use_scenes"] = use_scenes_var
-
         ttk.Label(gen_edit_frame, text="Duração Mín. Cena (s):").grid(row=1, column=0, sticky=tk.W, padx=5, pady=2)
         min_dur_var = tk.StringVar()
         min_dur_spinbox = ttk.Spinbox(gen_edit_frame, from_=0.1, to=60.0, increment=0.1, format="%.1f", textvariable=min_dur_var, width=5)
@@ -147,9 +170,9 @@ class PipelineGUI:
         self.string_vars["generate_edit_from_beats.min_scene_duration_seconds"] = min_dur_var
 
         # --- Detecção de Cortes de Cena ---
-        scene_detect_frame = ttk.LabelFrame(parent_tab, text="Detecção de Cortes de Cena", padding="5")
-        scene_detect_frame.grid(row=current_row, column=0, padx=5, pady=5, sticky=tk.EW)
-        current_row += 1
+        scene_detect_frame = ttk.LabelFrame(parent_frame, text="Ajustes: Detecção de Cortes de Cena", padding="5")
+        scene_detect_frame.grid(row=current_row + 1, column=0, columnspan=max_cols, padx=5, pady=5, sticky=tk.EW) # current_row já foi incrementado
+        # current_row += 1 # Movido para depois do frame
 
         ttk.Label(scene_detect_frame, text="Índice Vídeo (links.txt):").grid(row=0, column=0, sticky=tk.W, padx=5, pady=2)
         vid_idx_var = tk.StringVar()
@@ -162,11 +185,11 @@ class PipelineGUI:
         thresh_spinbox = ttk.Spinbox(scene_detect_frame, from_=1.0, to=100.0, increment=0.1, format="%.1f", textvariable=thresh_var, width=5)
         thresh_spinbox.grid(row=1, column=1, sticky=tk.W, padx=5, pady=2)
         self.string_vars["detectar_cortes_de_cena_video.threshold"] = thresh_var
-
+        current_row += 2 # Incrementa pelas duas linhas dos frames anteriores + esta
+        
         # --- Configurações de Saída ---
-        output_frame = ttk.LabelFrame(parent_tab, text="Saída", padding="5")
-        output_frame.grid(row=current_row, column=0, padx=5, pady=5, sticky=tk.EW)
-        current_row += 1
+        output_frame = ttk.LabelFrame(parent_frame, text="Ajustes: Saída", padding="5")
+        output_frame.grid(row=current_row, column=0, columnspan=max_cols, padx=5, pady=5, sticky=tk.EW)
 
         ttk.Label(output_frame, text="Nome do Filme:").grid(row=0, column=0, sticky=tk.W, padx=5, pady=2)
         movie_name_var = tk.StringVar()
@@ -179,9 +202,7 @@ class PipelineGUI:
         crf_spinbox = ttk.Spinbox(output_frame, from_=0, to=51, increment=1, textvariable=crf_var, width=5)
         crf_spinbox.grid(row=1, column=1, sticky=tk.W, padx=5, pady=2)
         self.string_vars["output_qualities.0.crf"] = crf_var # Simplificado: afeta o primeiro item de output_qualities
-
-        parent_tab.columnconfigure(0, weight=1)
-
+        parent_frame.columnconfigure(1, weight=1) # Para que os campos de entrada se expandam
 
 
     def load_config_file(self):
@@ -229,10 +250,21 @@ class PipelineGUI:
                         raise KeyError
                 str_var.set(str(value))
             except (KeyError, TypeError, IndexError):
-                # Se a chave não existir ou o tipo for incompatível, tenta pegar do DEFAULT_CONFIG
-                # Isso é um pouco mais complexo para caminhos aninhados, então pode precisar de ajuste fino
-                str_var.set("") # Ou um valor padrão específico
-
+                default_value_str = ""
+                temp_default_val = DEFAULT_CONFIG
+                valid_path_in_default = True
+                try:
+                    for k_part_default in keys:
+                        if k_part_default.isdigit() and isinstance(temp_default_val, list):
+                            temp_default_val = temp_default_val[int(k_part_default)]
+                        elif isinstance(temp_default_val, dict):
+                            temp_default_val = temp_default_val[k_part_default]
+                        else:
+                            valid_path_in_default = False; break
+                    if valid_path_in_default: default_value_str = str(temp_default_val)
+                except (KeyError, TypeError, IndexError):
+                    pass # Mantém default_value_str como ""
+                str_var.set(default_value_str)
     def save_config_file(self):
         # Garante que self.config_data está atualizado com os padrões se não foi carregado
         if not self.config_data:

@@ -8,6 +8,7 @@ def carregar_configuracao(caminho_arquivo_config="config.json"):
         "baixar_videos_da_lista": True,
         "extrair_frames_dos_videos": True,
         "baixar_audio_da_musica": True,
+        "max_music_duration_seconds": 0.0, # 0.0 significa sem limite
         "analisar_batidas_do_audio": True,
         "filtrar_batidas_por_amplitude": { # Novo padrão
             "enabled": True,
@@ -46,6 +47,11 @@ def carregar_configuracao(caminho_arquivo_config="config.json"):
                 config_carregada = json.load(f)
                 # Mescla com o padrão para garantir que todas as chaves existam
                 config_padrao.update(config_carregada)
+
+                # Garante que max_music_duration_seconds exista e seja um número
+                if "max_music_duration_seconds" not in config_padrao or \
+                   not isinstance(config_padrao.get("max_music_duration_seconds"), (int, float)):
+                    config_padrao["max_music_duration_seconds"] = 0.0 # Valor padrão do loader
 
                 # Ensure sub-structures are dictionaries and have expected keys, handling old formats
                 if isinstance(config_padrao.get("generate_edit_from_beats"), bool): # Converte formato antigo

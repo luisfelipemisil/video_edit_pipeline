@@ -201,7 +201,7 @@ def criar_edite_do_json(edit_data, config, base_dir):
         escaped_text_to_draw = text_to_draw.replace("'", "'\\''")
         
         print(f"\n  -> Etapa 1/2: Gerando clipe de cenas '{intermediate_scenes_clip_name}' (CRF: {crf_value})...")
-        drawtext_filter = f"drawtext=text='{escaped_text_to_draw}':fontfile='Arial':x=(w-text_w)/2:y=120:fontsize=40:fontcolor=white:box=1:boxcolor=black@0.4:boxborderw=5:enable='1'"
+        drawtext_filter = f"drawtext=text='{escaped_text_to_draw}':fontfile='Arial':x=(w-text_w)/2:y=576:fontsize=40:fontcolor=white:box=1:boxcolor=black@0.4:boxborderw=5:enable='1'"
         vf_after_concat = f"scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black,{drawtext_filter}"
 
         cmd_create_intermediate_scenes = ["ffmpeg", "-y"]
@@ -255,10 +255,22 @@ def criar_edite_do_json(edit_data, config, base_dir):
             ])
 
         final_concat_result = subprocess.run(cmd_final_concat, capture_output=True, text=True)
-        if final_concat_result.returncode == 0:
-            print(f"  ✅ Edição final '{output_edit_filename_quality}' criada!")
+        
+        # Verifica se o arquivo de saída existe APÓS a execução do ffmpeg
+        output_file_exists = os.path.exists(output_edit_filename_quality)
+
+        if final_concat_result.returncode == 0 and output_file_exists:
+            # Garante que o caminho seja absoluto para clareza no log
+            abs_output_path = os.path.abspath(output_edit_filename_quality)
+            print(f"  ✅ Edição final '{os.path.basename(output_edit_filename_quality)}' criada!")
+            print(f"     Salvo em: {abs_output_path}")
         else:
-            print(f"  ⚠️ Erro ao criar edição final '{output_edit_filename_quality}':\n     {final_concat_result.stderr}")
+            print(f"  ⚠️ Erro ao criar edição final '{output_edit_filename_quality}'.")
+            if final_concat_result.returncode != 0:
+                print(f"     Código de retorno FFmpeg: {final_concat_result.returncode}")
+                print(f"     Stderr FFmpeg:\n{final_concat_result.stderr.strip()}")
+            if not output_file_exists:
+                print(f"     AVISO: Arquivo de saída '{output_edit_filename_quality}' não encontrado no disco após o comando, mesmo que FFmpeg não tenha reportado erro fatal.")
 
     shutil.rmtree(temp_dir)
     print(f"  Diretório temporário '{temp_dir}' removido.")

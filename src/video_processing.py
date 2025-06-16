@@ -160,7 +160,7 @@ def detectar_cortes_de_cena(video_path, output_json_path, threshold=27.0):
         scene_manager.add_detector(ContentDetector(threshold=threshold))
         
         print(f"\n🔪 Detectando cortes de cena em: {os.path.basename(video_path)} (Threshold: {threshold})...")
-        scene_manager.detect_scenes(video=video, show_progress=True)
+        scene_manager.detect_scenes(video=video, show_progress=False) # Alterado para False
         scene_list = scene_manager.get_scene_list()
 
         cenas_info = []

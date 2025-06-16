@@ -25,7 +25,7 @@ from .utils import (
     comment_line_in_file, # Movido para utils
     # parse_hhmmssff_to_seconds, # Usado em editing.py, importado lá
     # find_frame_by_number, # Usado em editing.py, importado lá
-    # get_audio_duration # Usado em editing.py, importado lá
+    get_audio_duration
 )
 from .downloading import baixar_video, baixar_audio_youtube
 from .editing import criar_edite_do_json, gerar_edit_json_pelas_batidas
@@ -120,9 +120,82 @@ if __name__ == "__main__":
     elif config.get("baixar_audio_da_musica") or config.get("analisar_batidas_do_audio"):
         print("\nℹ️ Nenhuma URL de música válida fornecida em '{musica_config_file}'. Processamento de áudio pulado.")
 
+    # --- 2.5 Preparar Áudio para Análise de Batidas (Truncamento Opcional) ---
+    # caminho_audio_para_analise será o arquivo efetivamente usado pela função de análise de batidas.
+    # Pode ser o original ou uma versão truncada.
+    caminho_audio_para_analise = None 
+
+    if caminho_do_arquivo_de_musica: # Se um áudio foi definido via musica.txt
+        caminho_audio_para_analise = caminho_do_arquivo_de_musica # Padrão: usar o original
+        
+        max_music_duration_sec = config.get("max_music_duration_seconds", 0.0)
+        # Garante que é um número float válido para a comparação
+        if not isinstance(max_music_duration_sec, (int, float)):
+            max_music_duration_sec = 0.0
+        print(f"   Configuração 'max_music_duration_seconds': {max_music_duration_sec}s")
+
+        if max_music_duration_sec > 0:
+            print(f"\n⚙️ Verificando necessidade de truncar áudio '{os.path.basename(caminho_do_arquivo_de_musica)}' para análise (limite: {max_music_duration_sec}s)...")
+            original_duration = get_audio_duration(caminho_do_arquivo_de_musica) 
+            print(f"   Duração original detectada para '{os.path.basename(caminho_do_arquivo_de_musica)}': {original_duration}s")
+
+            if original_duration is not None:
+                if original_duration > max_music_duration_sec:
+                    # O arquivo original será substituído.
+                    # Criar um nome de arquivo temporário para a saída do ffmpeg.
+                    # Este arquivo temporário será criado no mesmo diretório do original.
+                    original_dir = os.path.dirname(caminho_do_arquivo_de_musica)
+                    original_basename, original_ext = os.path.splitext(os.path.basename(caminho_do_arquivo_de_musica))
+                    temp_output_audio_path = os.path.join(original_dir, f"{original_basename}.trunc_temp{original_ext}")
+
+                    print(f"   Truncando '{os.path.basename(caminho_do_arquivo_de_musica)}' (duração: {original_duration:.2f}s) para {max_music_duration_sec:.2f}s.")
+                    print(f"   ℹ️ O arquivo original '{os.path.basename(caminho_do_arquivo_de_musica)}' será substituído se o truncamento for bem-sucedido.")
+                    cmd_truncate = [ # Comando para truncar
+                        "ffmpeg", "-y",
+                        "-i", caminho_do_arquivo_de_musica,
+                        "-ss", "0", 
+                        "-t", str(max_music_duration_sec),
+                        "-vn", # Sem vídeo
+                        "-c:a", "copy", # Copia o codec de áudio se possível (yt-dlp geralmente baixa mp3)
+                        temp_output_audio_path # Saída para o arquivo temporário
+                    ]
+                    
+                    truncate_result = subprocess.run(cmd_truncate, capture_output=True, text=True, check=False, encoding='utf-8')
+
+                    if truncate_result.returncode == 0 and os.path.exists(temp_output_audio_path):
+                        try:
+                            # Tenta remover o original antes de renomear o temporário
+                            if os.path.exists(caminho_do_arquivo_de_musica): # Deveria sempre existir aqui
+                                os.remove(caminho_do_arquivo_de_musica)
+                            os.rename(temp_output_audio_path, caminho_do_arquivo_de_musica)
+                            print(f"   ✅ Áudio original '{os.path.basename(caminho_do_arquivo_de_musica)}' foi substituído pela versão truncada.")
+                            caminho_audio_para_analise = caminho_do_arquivo_de_musica # Usar o arquivo original (agora truncado)
+                            print(f"   Áudio para análise agora é: {caminho_audio_para_analise} (truncado)")
+                            # caminho_do_arquivo_de_musica já aponta para o arquivo correto (que agora está truncado)
+                            # A mensagem "será usado para a edição final" já está implícita.
+                        except OSError as e:
+                            print(f"   ⚠️ Falha ao substituir o arquivo original '{os.path.basename(caminho_do_arquivo_de_musica)}' pelo truncado: {e}")
+                            print(f"      A versão truncada pode estar em: {temp_output_audio_path}")
+                            print(f"      A análise de batidas e a edição usarão o áudio original não truncado.")
+                            # caminho_audio_para_analise permanece como o original não truncado, que não foi alterado.
+                            # Se o rename falhar, caminho_do_arquivo_de_musica ainda é o original não truncado.
+                    else:
+                        print(f"   ⚠️ Falha ao criar a versão truncada temporária do áudio. O arquivo original não foi modificado.")
+                        print(f"      Comando: {' '.join(cmd_truncate)}")
+                        if truncate_result.stderr: print(f"      Stderr: {truncate_result.stderr.strip()}")
+                        if os.path.exists(temp_output_audio_path): # Limpa o temporário se ffmpeg falhou mas o arquivo foi criado
+                            try: os.remove(temp_output_audio_path)
+                            except OSError: pass
+                        # caminho_audio_para_analise permanece como o original não truncado
+                else:
+                    print(f"   Áudio original ({original_duration:.2f}s) já está dentro do limite de {max_music_duration_sec}s. Não é necessário truncar.")
+                    # caminho_audio_para_analise já é caminho_do_arquivo_de_musica (original)
+            else:
+                print(f"   ⚠️ Não foi possível obter a duração do áudio original '{os.path.basename(caminho_do_arquivo_de_musica)}'. Não será truncado para análise.")
+                # caminho_audio_para_analise já é caminho_do_arquivo_de_musica (original)
+
     # --- 3. Análise de Batidas (se habilitada e áudio disponível) ---
     if config.get("analisar_batidas_do_audio"):
-        # Verifica se librosa está instalado antes de tentar analisar
         try:
             import librosa
             import numpy as np
@@ -132,36 +205,45 @@ if __name__ == "__main__":
             print("\n⚠️ Análise de batidas desabilitada: librosa ou numpy não está instalado.")
             print("   Por favor, instale com: pip install librosa numpy")
 
-
         if librosa_disponivel:
-            audio_para_analise_encontrado = None
-            # Tenta encontrar um arquivo de áudio na pasta 'songs'
-            if os.path.exists(songs_directory) and os.path.isdir(songs_directory):
-                audio_files = []
-                audio_extensions = ('.mp3', '.wav', '.aac', '.m4a', '.ogg', '.flac')
-                for f_name in os.listdir(songs_directory):
-                    if os.path.isfile(os.path.join(songs_directory, f_name)) and f_name.lower().endswith(audio_extensions):
-                        audio_files.append(os.path.join(songs_directory, f_name))
-                
-                if audio_files:
-                    # Ordena os arquivos de áudio pelo tempo de modificação (mais recente primeiro)
-                    try:
-                        latest_audio_file = max(audio_files, key=os.path.getmtime)
-                        audio_para_analise_encontrado = latest_audio_file
-                        print(f"\n🎵 Áudio mais recente encontrado para análise de batidas: {audio_para_analise_encontrado}")
-                    except Exception as e:
-                        print(f"⚠️ Erro ao determinar o áudio mais recente: {e}. Usando o primeiro encontrado alfabeticamente.")
-                        # Fallback para o primeiro arquivo em ordem alfabética se houver erro
-                        audio_para_analise_encontrado = sorted(audio_files)[0] if audio_files else None
-                        if audio_para_analise_encontrado:
-                             print(f"\n🎵 Áudio (fallback) encontrado para análise de batidas: {audio_para_analise_encontrado}")
-                
-            if audio_para_analise_encontrado:
+            # audio_para_analise foi definido na seção 2.5 (pode ser o original ou truncado)
+            # ou ainda é None se caminho_do_arquivo_de_musica era None.
+            audio_final_para_processar_batidas = caminho_audio_para_analise
+
+            if not audio_final_para_processar_batidas: # Se musica.txt não forneceu um áudio válido
+                print(f"\n🎵 'musica.txt' não forneceu áudio ou falhou o processamento inicial. Procurando áudio em '{songs_directory}' para análise...")
+                # Fallback: Tenta encontrar um arquivo de áudio na pasta 'songs'
+                if os.path.exists(songs_directory) and os.path.isdir(songs_directory):
+                    audio_files = []
+                    audio_extensions = ('.mp3', '.wav', '.aac', '.m4a', '.ogg', '.flac')
+                    excluded_suffix = "_truncated_for_beats_analysis" # Para não pegar arquivos de análise como fallback principal
+                    for f_name in os.listdir(songs_directory):
+                        file_path = os.path.join(songs_directory, f_name)
+                        if os.path.isfile(file_path) and \
+                           f_name.lower().endswith(audio_extensions) and \
+                           not f_name.endswith(excluded_suffix + os.path.splitext(f_name)[1]):
+                            audio_files.append(file_path)
+                    
+                    if audio_files:
+                        try:
+                            latest_audio_file = max(audio_files, key=os.path.getmtime)
+                            audio_final_para_processar_batidas = latest_audio_file
+                            print(f"   🎵 Áudio mais recente (fallback) encontrado para análise de batidas: {audio_final_para_processar_batidas}")
+                        except Exception as e:
+                            print(f"   ⚠️ Erro ao determinar o áudio mais recente (fallback): {e}. Usando o primeiro encontrado alfabeticamente.")
+                            audio_final_para_processar_batidas = sorted(audio_files)[0] if audio_files else None
+                            if audio_final_para_processar_batidas:
+                                 print(f"   🎵 Áudio (fallback alfabético) encontrado para análise de batidas: {audio_final_para_processar_batidas}")
+            
+            if audio_final_para_processar_batidas:
+                print(f"\n🎵 Usando áudio para análise de batidas: {os.path.basename(audio_final_para_processar_batidas)}")
                 fps_referencia_batidas = 25
                 pasta_batidas_analisadas = os.path.join(songs_directory, "analise_batidas")
-                # A função analisar_batidas_audio agora vai limpar a pasta e nomear o arquivo como beats.txt
-                arquivo_beats_processado, arquivo_beats_with_amplitude_processado = analisar_batidas_audio(audio_para_analise_encontrado, pasta_batidas_analisadas, fps_para_timestamp=fps_referencia_batidas)
-                # As mensagens de sucesso ou falha já são impressas dentro da função
+                arquivo_beats_processado, arquivo_beats_with_amplitude_processado = analisar_batidas_audio(
+                    audio_final_para_processar_batidas, 
+                    pasta_batidas_analisadas, 
+                    fps_para_timestamp=fps_referencia_batidas
+                )
             else:
                 print(f"ℹ️ Análise de batidas pulada: nenhum arquivo de áudio encontrado na pasta '{songs_directory}'.")
         # else: (mensagem de librosa não disponível já foi impressa)
@@ -334,26 +416,38 @@ if __name__ == "__main__":
 
 
         # B. Determinar nome do áudio para JSON a partir da pasta 'songs'
+        # Priorizar o áudio original definido em musica.txt para o nome no JSON.
+        # A variável `nome_audio_para_json` já existe no código original.
         if os.path.exists(songs_directory) and os.path.isdir(songs_directory):
-            audio_extensions = ('.mp3', '.wav', '.aac', '.m4a', '.ogg', '.flac')
-            song_files = []
-            for f_name in os.listdir(songs_directory):
-                if os.path.isfile(os.path.join(songs_directory, f_name)) and f_name.lower().endswith(audio_extensions):
-                    song_files.append(f_name)
-            
-            if song_files:
-                try:
-                    # Ordena os arquivos de áudio pelo tempo de modificação (mais recente primeiro)
-                    latest_song_file_name = max(song_files, key=lambda f: os.path.getmtime(os.path.join(songs_directory, f)))
-                    nome_audio_para_json = latest_song_file_name
-                    print(f"   🎵 Usando arquivo de áudio mais recente em '{songs_directory}': {nome_audio_para_json}")
-                except Exception as e:
-                    print(f"   ⚠️ Erro ao determinar o áudio mais recente para JSON: {e}. Usando o primeiro encontrado alfabeticamente.")
-                    nome_audio_para_json = sorted(song_files)[0] if song_files else None
-                    if nome_audio_para_json:
-                        print(f"   🎵 Usando arquivo de áudio (fallback) em '{songs_directory}': {nome_audio_para_json}")
+            if caminho_do_arquivo_de_musica: # Se musica.txt definiu um áudio (este caminho é o do arquivo original, que pode ter sido truncado no local)
+                # Gera o caminho relativo à pasta 'songs' para o edit.json
+                # Ex: se caminho_do_arquivo_de_musica for "/abs/path/songs/minha_musica.mp3", e songs_directory for "/abs/path/songs", o relpath será "minha_musica.mp3".
+                nome_audio_para_json = os.path.relpath(caminho_do_arquivo_de_musica, songs_directory)
+                print(f"   🎵 Usando nome de áudio (de musica.txt) para JSON: {nome_audio_para_json}")
+            else:
+                # Fallback: encontrar o mais recente na pasta songs, excluindo os temporários de análise
+                audio_extensions = ('.mp3', '.wav', '.aac', '.m4a', '.ogg', '.flac')
+                song_files_for_json = []
+                excluded_suffix_for_json = "_truncated_for_beats_analysis"
+                for f_name in os.listdir(songs_directory):
+                    file_path = os.path.join(songs_directory, f_name)
+                    if os.path.isfile(file_path) and \
+                       f_name.lower().endswith(audio_extensions) and \
+                       not f_name.endswith(excluded_suffix_for_json + os.path.splitext(f_name)[1]):
+                        song_files_for_json.append(f_name)
+                
+                if song_files_for_json:
+                    try:
+                        latest_song_file_name = max(song_files_for_json, key=lambda f: os.path.getmtime(os.path.join(songs_directory, f)))
+                        nome_audio_para_json = latest_song_file_name
+                        print(f"   🎵 Usando arquivo de áudio mais recente (fallback) em '{songs_directory}' para JSON: {nome_audio_para_json}")
+                    except Exception as e:
+                        print(f"   ⚠️ Erro ao determinar o áudio mais recente (fallback) para JSON: {e}. Usando o primeiro encontrado alfabeticamente.")
+                        nome_audio_para_json = sorted(song_files_for_json)[0] if song_files_for_json else None
+                        if nome_audio_para_json:
+                            print(f"   🎵 Usando arquivo de áudio (fallback alfabético) em '{songs_directory}' para JSON: {nome_audio_para_json}")
 
-        if not nome_audio_para_json:
+        if not nome_audio_para_json: # Se ainda não foi definido
             print(f"   ⚠️ Nenhum arquivo de áudio ({', '.join(audio_extensions)}) encontrado em '{songs_directory}'.")
 
         # C. Determinar nome_video_para_json (vídeo mais recente em videos_baixados)
